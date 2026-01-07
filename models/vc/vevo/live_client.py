@@ -119,12 +119,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--server", type=str, required=True, help="WebSocket URL, e.g. ws://localhost:8080")
     parser.add_argument("--ref", type=str, required=True, help="Reference wav path.")
     parser.add_argument("--kind", type=str, default="vevotimbre", choices=["vevotimbre", "vevovoice"])
+    parser.add_argument(
+        "--config_json",
+        type=str,
+        default=None,
+        help="Optional EvalConfig JSON file (as produced by evaluation.vevo_live.search).",
+    )
 
     parser.add_argument("--io_sample_rate", type=int, default=48000, help="Audio device sample rate.")
     parser.add_argument("--model_sample_rate", type=int, default=24000, help="Server/model sample rate.")
     parser.add_argument("--window_ms", type=int, default=1000)
     parser.add_argument("--hop_ms", type=int, default=1000)
     parser.add_argument("--fade_ms", type=int, default=20)
+    parser.add_argument("--normalize_align", type=str, default="end", choices=["start", "end"])
     parser.add_argument("--flow_matching_steps", type=int, default=16)
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--diffusion_cfg", type=float, default=1.0)
@@ -148,6 +155,31 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--block_ms", type=int, default=20)
     parser.add_argument("--list_devices", action="store_true")
     args = parser.parse_args(argv)
+
+    if args.config_json:
+        raw = json.loads(Path(args.config_json).read_text())
+        inf = raw.get("inference", {})
+        stream = raw.get("streaming", {})
+
+        args.kind = str(inf.get("kind", args.kind))
+        args.window_ms = int(stream.get("window_ms", args.window_ms))
+        args.hop_ms = int(stream.get("hop_ms", args.hop_ms))
+        args.fade_ms = int(stream.get("fade_ms", args.fade_ms))
+        args.normalize_align = str(stream.get("normalize_align", args.normalize_align))
+
+        args.flow_matching_steps = int(inf.get("flow_matching_steps", args.flow_matching_steps))
+        args.seed = int(inf.get("seed", args.seed))
+        args.diffusion_cfg = float(inf.get("diffusion_cfg", args.diffusion_cfg))
+        args.diffusion_rescale_cfg = float(inf.get("diffusion_rescale_cfg", args.diffusion_rescale_cfg))
+
+        args.ar_max_length = int(inf.get("ar_max_length", args.ar_max_length))
+        args.ar_temperature = float(inf.get("ar_temperature", args.ar_temperature))
+        args.ar_top_k = int(inf.get("ar_top_k", args.ar_top_k))
+        args.ar_top_p = float(inf.get("ar_top_p", args.ar_top_p))
+        args.ar_repeat_penalty = float(inf.get("ar_repeat_penalty", args.ar_repeat_penalty))
+        args.ar_min_new_tokens = int(inf.get("ar_min_new_tokens", args.ar_min_new_tokens))
+        if "prepend_style_ref_to_input" in inf:
+            args.no_prepend_style_ref_to_input = not bool(inf["prepend_style_ref_to_input"])
 
     try:
         import sounddevice as sd
@@ -226,7 +258,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "ar_repeat_penalty": args.ar_repeat_penalty,
             "ar_min_new_tokens": args.ar_min_new_tokens,
             "prepend_style_ref_to_input": not bool(args.no_prepend_style_ref_to_input),
-            "normalize_align": "end",
+            "normalize_align": args.normalize_align,
             "reference_wav_b64": base64.b64encode(ref_bytes).decode("utf-8"),
         }
 

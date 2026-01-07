@@ -118,6 +118,13 @@ On the GPU host (runs the model):
 python -m models.vc.vevo.live_server --host 0.0.0.0 --port 8080
 ```
 
+If the server runs on a remote GPU machine (e.g. Vast), forward the port to your local machine:
+
+```bash
+# Example (adjust host/port to your setup)
+ssh -L 8080:localhost:8080 vastai-gpu-1
+```
+
 On your local machine (mic -> server -> playback):
 
 ```bash
@@ -125,16 +132,38 @@ python -m models.vc.vevo.live_client \
   --server ws://localhost:8080 \
   --ref assets/vevo_live/target_ref.wav \
   --kind vevotimbre \
-  --window_ms 1000 --hop_ms 1000 --fade_ms 20 \
-  --flow_matching_steps 16
+  --window_ms 1000 --hop_ms 500 --fade_ms 20 \
+  --flow_matching_steps 8
+```
+
+Or load a saved autotune config:
+
+```bash
+python -m models.vc.vevo.live_client \
+  --server ws://localhost:8080 \
+  --ref assets/vevo_live/target_ref.wav \
+  --config_json evaluation/vevo_live/best_configs/vevotimbre.json
+```
+
+To select audio devices:
+
+```bash
+python -m models.vc.vevo.live_client --list_devices
+python -m models.vc.vevo.live_client ... --input_device "Your Mic Name" --output_device "Your Output Name"
 ```
 
 ## Deterministic Autotune + Regression
 
 ```bash
-# Parameter search (writes `runs/vevo_live/search/search/best/*`)
+# Parameter search (writes `runs/vevo_live/search/best/*`)
 python -m evaluation.vevo_live.search \
   --kind vevotimbre \
+  --reference_wav assets/vevo_live/target_ref.wav \
+  --playlist_dir assets/vevo_live/playlist
+
+# Regression (uses a committed baseline config; adjust thresholds after establishing your own baseline)
+python -m evaluation.vevo_live.regress \
+  --config_json evaluation/vevo_live/best_configs/vevotimbre.json \
   --reference_wav assets/vevo_live/target_ref.wav \
   --playlist_dir assets/vevo_live/playlist
 ```
