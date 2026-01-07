@@ -148,8 +148,10 @@ class Emotion2VecEmbedder:
             from modelscope.pipelines import pipeline  # type: ignore[import-not-found]
             from modelscope.utils.constant import Tasks  # type: ignore[import-not-found]
         except ModuleNotFoundError as e:
+            missing = getattr(e, "name", None) or "modelscope"
             raise ModuleNotFoundError(
-                "Missing dependency 'modelscope'. Install it (e.g., `pip install -U modelscope funasr`)."
+                f"Missing dependency '{missing}' required for emotion2vec (modelscope). "
+                "Install it (e.g., `pip install -U modelscope funasr addict`)."
             ) from e
 
         self._pipeline = pipeline(task=Tasks.emotion_recognition, model=model_id, device=device)
@@ -212,4 +214,3 @@ def compute_pair_metrics(
         "a_sim": float(acc_sim) if math.isfinite(acc_sim) else float("nan"),
         "e_sim": float(emo_sim) if math.isfinite(emo_sim) else float("nan"),
     }
-
