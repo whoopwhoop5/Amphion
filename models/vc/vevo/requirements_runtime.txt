@@ -15,7 +15,7 @@ phonemizer
 pyyaml
 pyworld
 resemblyzer
-ruamel.yaml
+ruamel.yaml<0.19.0
 safetensors
 scipy
 soundfile
