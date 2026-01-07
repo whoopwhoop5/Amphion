@@ -13,6 +13,7 @@ numpy
 onnxruntime
 phonemizer
 pyyaml
+pyworld
 resemblyzer
 ruamel.yaml
 safetensors
