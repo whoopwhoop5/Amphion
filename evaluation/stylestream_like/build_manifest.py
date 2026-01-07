@@ -363,6 +363,64 @@ def _download_librispeech_test_clean_sources(
     return sources[:num_sources]
 
 
+def _download_libritts_test_clean_sources(
+    *,
+    out_dir: Path,
+    num_sources: int,
+    seed: int,
+    revision: Optional[str] = None,
+) -> list[SourceItem]:
+    """Download deterministic sources from LibriTTS test-clean (HF parquet)."""
+
+    repo_id = "mythicinfinity/libritts"
+    parquet_paths = [
+        "data/test.clean/test.clean-00000-of-00004.parquet",
+        "data/test.clean/test.clean-00001-of-00004.parquet",
+        "data/test.clean/test.clean-00002-of-00004.parquet",
+        "data/test.clean/test.clean-00003-of-00004.parquet",
+    ]
+
+    rows: list[tuple[str, str, Any]] = []
+    for shard, parquet_path in enumerate(parquet_paths):
+        local = hf_hub_download(repo_id, parquet_path, repo_type="dataset", revision=revision)
+        table = pq.read_table(local, columns=["audio", "text_normalized", "speaker_id", "id"])
+        for i in range(table.num_rows):
+            transcript = str(table["text_normalized"][i].as_py() or "")
+            spk = str(table["speaker_id"][i].as_py() or "")
+            uid = str(table["id"][i].as_py() or "")
+            audio = table["audio"][i].as_py()
+            sid = f"libritts_source:{spk}:{uid}:{shard}:{i}"
+            rows.append((sid, transcript, audio))
+
+    # Deterministic selection by stable hash.
+    scores = [_stable_hash(f"{seed}|{sid}|{transcript}") for sid, transcript, _ in rows]
+    order = np.argsort(np.asarray(scores, dtype=np.uint64), kind="stable")
+
+    sources: list[SourceItem] = []
+    for idx in order.tolist():
+        sid, transcript, audio = rows[idx]
+        if not transcript.strip():
+            continue
+        if not isinstance(audio, dict) or not audio.get("bytes"):
+            continue
+
+        wav_path = out_dir / "sources" / f"libritts_{len(sources):05d}.wav"
+        _write_audio_as_wav(wav_path, audio=audio, target_sr=24000)
+        sources.append(
+            SourceItem(
+                id=sid,
+                dataset=repo_id,
+                transcript=transcript,
+                wav_path=os.fspath(wav_path),
+                accent=None,
+            )
+        )
+        if len(sources) >= num_sources:
+            break
+
+    return sources
+
+
 def _download_l2_arctic_accent_targets(
     *,
     out_dir: Path,
@@ -447,7 +505,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Optional revision pins (for repeatability over time). When omitted, we resolve the current sha via the HF API.
     parser.add_argument("--globe_revision", type=str, default="", help="Optional dataset revision for MushanW/GLOBE")
     parser.add_argument("--ravdess_revision", type=str, default="", help="Optional dataset revision for birgermoell/ravdess")
-    parser.add_argument("--librispeech_revision", type=str, default="", help="Optional dataset revision for openslr/librispeech_asr")
+    parser.add_argument(
+        "--libritts_revision",
+        type=str,
+        default="",
+        help="Optional dataset revision for mythicinfinity/libritts (LibriTTS).",
+    )
+    parser.add_argument(
+        "--librispeech_revision",
+        type=str,
+        default="",
+        help="(Deprecated) Optional dataset revision for openslr/librispeech_asr.",
+    )
     parser.add_argument("--l2_arctic_revision", type=str, default="", help="Optional dataset revision for akrishnan/l2_arctic_raw")
 
     parser.add_argument(
@@ -472,10 +541,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     globe_rev = str(args.globe_revision).strip() or api.dataset_info("MushanW/GLOBE").sha
     ravdess_rev = str(args.ravdess_revision).strip() or api.dataset_info("birgermoell/ravdess").sha
 
-    librispeech_rev: Optional[str] = None
+    libritts_rev: Optional[str] = None
     l2_arctic_rev: Optional[str] = None
     if args.preset == "stylestream_test":
-        librispeech_rev = str(args.librispeech_revision).strip() or api.dataset_info("openslr/librispeech_asr").sha
+        libritts_rev = str(args.libritts_revision).strip() or api.dataset_info("mythicinfinity/libritts").sha
         l2_arctic_rev = str(args.l2_arctic_revision).strip() or api.dataset_info("akrishnan/l2_arctic_raw").sha
 
     if args.preset == "default":
@@ -497,20 +566,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
         targets = globe_targets + ravdess_targets
     else:
-        if librispeech_rev is None or l2_arctic_rev is None:
+        if libritts_rev is None or l2_arctic_rev is None:
             raise RuntimeError("Missing preset dataset revisions")
 
         # StyleStream-Test (paper) uses multiple corpora. We approximate with public HF datasets:
-        # - Sources: 50% GLOBE-test + 50% LibriSpeech test-clean
+        # - Sources: 50% GLOBE-test + 50% LibriTTS test-clean
         # - Targets: 5 accents (2 from GLOBE + 3 from L2-ARCTIC) and 5 emotions (RAVDESS)
         globe_n = int(args.num_sources) // 2
-        ls_n = int(args.num_sources) - globe_n
+        libri_n = int(args.num_sources) - globe_n
         sources: list[SourceItem] = []
         sources.extend(_download_globe_sources(out_dir=out_dir, num_sources=globe_n, seed=args.seed, revision=globe_rev))
         sources.extend(
-            _download_librispeech_test_clean_sources(
-                out_dir=out_dir, num_sources=ls_n, seed=args.seed, revision=librispeech_rev
-            )
+            _download_libritts_test_clean_sources(out_dir=out_dir, num_sources=libri_n, seed=args.seed, revision=libritts_rev)
         )
 
         globe_targets = _download_globe_accent_targets(
@@ -553,7 +620,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "pairing": str(args.pairing),
             "globe_revision": globe_rev,
             "ravdess_revision": ravdess_rev,
-            "librispeech_revision": librispeech_rev or "",
+            "libritts_revision": libritts_rev or "",
             "l2_arctic_revision": l2_arctic_rev or "",
             "num_sources": len(sources),
             "num_targets": len(targets),
