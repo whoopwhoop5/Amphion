@@ -246,6 +246,7 @@ class AutoregressiveTransformer(nn.Module):
         top_p=0.9,
         repeat_penalty=1.0,
         min_new_tokens=50,
+        generator=None,
     ):
         """
         Generate for one sample.
@@ -313,6 +314,7 @@ class AutoregressiveTransformer(nn.Module):
                 top_p=top_p,
                 repetition_penalty=repeat_penalty,
                 min_new_tokens=min_new_tokens,
+                generator=generator,
             )
         else:
             # When not using global style encoder, prompt_output_ids is required
@@ -332,6 +334,7 @@ class AutoregressiveTransformer(nn.Module):
                 top_p=top_p,
                 repetition_penalty=repeat_penalty,
                 min_new_tokens=min_new_tokens,
+                generator=generator,
             )
 
             gen_tokens = gen_tokens[:, input_length:]

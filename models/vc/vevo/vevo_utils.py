@@ -412,6 +412,15 @@ class VevoInferencePipeline:
         vc_input_mask_ratio=-1,
         use_global_guided_inference=False,
         flow_matching_steps=32,
+        ar_max_length=2000,
+        ar_temperature=0.8,
+        ar_top_k=50,
+        ar_top_p=0.9,
+        ar_repeat_penalty=1.0,
+        ar_min_new_tokens=50,
+        diffusion_cfg=1.0,
+        diffusion_rescale_cfg=0.75,
+        seed=None,
         display_audio=False,
     ):
         assert self.ar_model is not None
@@ -536,10 +545,24 @@ class VevoInferencePipeline:
                 print("Prompt output_ids:", prompt_output_ids.shape)
 
         # [1, T]
+        ar_generator = None
+        fm_generator = None
+        if seed is not None:
+            seed = int(seed)
+            ar_generator = torch.Generator(device=self.device).manual_seed(seed)
+            fm_generator = torch.Generator(device=self.device).manual_seed(seed + 1)
+
         predicted_hubert_codecs = self.ar_model.generate(
             input_ids=ar_input_ids,
             prompt_mels=self.extract_prompt_mel_feature(style_ref_speech16k),
             prompt_output_ids=prompt_output_ids,
+            max_length=ar_max_length,
+            temperature=ar_temperature,
+            top_k=ar_top_k,
+            top_p=ar_top_p,
+            repeat_penalty=ar_repeat_penalty,
+            min_new_tokens=ar_min_new_tokens,
+            generator=ar_generator,
         )
 
         ## Diffusion ##
@@ -555,6 +578,9 @@ class VevoInferencePipeline:
             cond=self.fmt_model.cond_emb(diffusion_input_codecs),
             prompt=self.extract_mel_feature(timbre_ref_speech24k),
             n_timesteps=flow_matching_steps,
+            cfg=diffusion_cfg,
+            rescale_cfg=diffusion_rescale_cfg,
+            generator=fm_generator,
         )
 
         ## Vocoder and Display ##
@@ -574,6 +600,9 @@ class VevoInferencePipeline:
         src_wav_path,
         timbre_ref_wav_path,
         flow_matching_steps=32,
+        diffusion_cfg=1.0,
+        diffusion_rescale_cfg=0.75,
+        seed=None,
         display_audio=False,
     ):
         src_speech, src_speech24k, src_speech16k = load_wav(src_wav_path, self.device)
@@ -593,6 +622,11 @@ class VevoInferencePipeline:
                 display_audio_in_notebook(timbre_ref_speech, rate=24000)
                 print("-" * 20)
 
+        fm_generator = None
+        if seed is not None:
+            seed = int(seed)
+            fm_generator = torch.Generator(device=self.device).manual_seed(seed)
+
         ## Diffusion ##
         src_hubert_codecs, _ = self.extract_hubert_codec(
             self.content_style_tokenizer, src_speech16k, duration_reduction=False
@@ -609,6 +643,9 @@ class VevoInferencePipeline:
             cond=self.fmt_model.cond_emb(diffusion_input_codecs),
             prompt=self.extract_mel_feature(timbre_ref_speech24k),
             n_timesteps=flow_matching_steps,
+            cfg=diffusion_cfg,
+            rescale_cfg=diffusion_rescale_cfg,
+            generator=fm_generator,
         )
 
         ## Vocoder and Display ##

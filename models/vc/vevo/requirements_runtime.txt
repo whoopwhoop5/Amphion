@@ -1,0 +1,27 @@
+# Runtime + evaluation dependencies for Vevo on modern Python (e.g. 3.12).
+#
+# Note: install torch/torchaudio first (CUDA build) before this file.
+
+accelerate
+encodec
+g2p_en
+huggingface_hub
+ipython
+json5
+librosa
+numpy
+onnxruntime
+phonemizer
+pyyaml
+resemblyzer
+ruamel.yaml
+safetensors
+scipy
+soundfile
+spaces
+torchmetrics
+tqdm
+transformers
+unidecode
+openai-whisper
+websockets>=12.0

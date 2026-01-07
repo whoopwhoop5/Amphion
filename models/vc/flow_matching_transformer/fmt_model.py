@@ -235,6 +235,7 @@ class FlowMatchingTransformer(nn.Module):
         n_timesteps=10,
         cfg=1.0,
         rescale_cfg=0.75,
+        generator=None,
     ):
         h = 1.0 / n_timesteps
         prompt_len = prompt.shape[1]
@@ -252,6 +253,7 @@ class FlowMatchingTransformer(nn.Module):
             dtype=cond.dtype,
             device=cond.device,
             requires_grad=False,
+            generator=generator,
         )
         xt = z
         # t from 0 to 1: x0 = z ~ N(0, 1)

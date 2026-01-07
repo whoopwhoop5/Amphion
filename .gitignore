@@ -51,12 +51,14 @@ ckpts
 pretrained/wenet/*conformer_exp
 pretrained/bigvgan/args.json
 !egs/tts/VALLE/prompt_examples/*.wav
+!assets/vevo_live/**/*.wav
 
 # Runtime data dirs
 processed_data
 data
 model_ckpt
 logs
+runs/
 *.lst
 source_audio
 result

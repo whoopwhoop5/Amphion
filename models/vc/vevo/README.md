@@ -79,6 +79,65 @@ python -m models.vc.vevo.infer_vevotts
 ```
 
 Running this will automatically download the pretrained model from HuggingFace and start the inference process. The result audio is by default saved in `models/vc/vevo/wav/output*.wav`, you can change this in the scripts  `models/vc/vevo/infer_vevo*.py`
+
+## Offline CLI (WAV -> WAV)
+
+This repo also includes a small, reusable CLI wrapper around the official Vevo inference:
+
+```bash
+# Vevo-Timbre (style-preserved voice conversion)
+python -m models.vc.vevo.convert \
+  --kind vevotimbre \
+  --src assets/vevo_live/playlist/source_clip_00.wav \
+  --ref assets/vevo_live/target_ref.wav \
+  --out runs/vevo_live/offline_vevotimbre.wav \
+  --flow_matching_steps 16
+
+# Vevo-Voice (style-converted voice conversion)
+python -m models.vc.vevo.convert \
+  --kind vevovoice \
+  --src assets/vevo_live/playlist/source_clip_00.wav \
+  --ref assets/vevo_live/target_ref.wav \
+  --out runs/vevo_live/offline_vevovoice.wav \
+  --flow_matching_steps 16
+```
+
+## Live Buffered Conversion (GPU server + local client)
+
+This is a buffered (~1s) streaming wrapper around Vevo that enforces stable chunk timing at the wrapper level.
+
+Install optional live dependencies:
+
+```bash
+pip install -r models/vc/vevo/requirements_live.txt
+```
+
+On the GPU host (runs the model):
+
+```bash
+python -m models.vc.vevo.live_server --host 0.0.0.0 --port 8080
+```
+
+On your local machine (mic -> server -> playback):
+
+```bash
+python -m models.vc.vevo.live_client \
+  --server ws://localhost:8080 \
+  --ref assets/vevo_live/target_ref.wav \
+  --kind vevotimbre \
+  --window_ms 1000 --hop_ms 1000 --fade_ms 20 \
+  --flow_matching_steps 16
+```
+
+## Deterministic Autotune + Regression
+
+```bash
+# Parameter search (writes `runs/vevo_live/search/search/best/*`)
+python -m evaluation.vevo_live.search \
+  --kind vevotimbre \
+  --reference_wav assets/vevo_live/target_ref.wav \
+  --playlist_dir assets/vevo_live/playlist
+```
 ## Training Recipe
 
 For advanced users, we provide the following training recipe:
