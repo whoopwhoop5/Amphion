@@ -173,7 +173,9 @@ def main(argv: list[str] | None = None) -> int:
                 metrics = {
                     "cfg_uid": cfg_uid,
                     "speaker_similarity": sim,
-                    "wer": float(np.mean(wers)) if wers else 1.0,
+                    "wer": float(np.mean([w for w in wers if np.isfinite(w)]))
+                    if any(np.isfinite(w) for w in wers)
+                    else 1.0,
                     "glitch_boundary_jump_ratio_p95": float(np.mean(clicks)) if clicks else 0.0,
                     "mean_window_sec": float(np.mean(mean_window_secs)) if mean_window_secs else 0.0,
                 }

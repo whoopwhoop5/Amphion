@@ -172,6 +172,9 @@ def compute_wer_whisper(
 
     ref_text = _normalize_text_for_wer(ref["text"])
     deg_text = _normalize_text_for_wer(deg["text"])
+    if not ref_text:
+        # Avoid divide-by-zero inside WER when reference has 0 words.
+        return float("nan")
     return float(wer(deg_text, ref_text).detach().cpu().numpy().tolist())
 
 

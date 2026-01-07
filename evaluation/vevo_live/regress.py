@@ -112,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         model_name=args.similarity_model,  # type: ignore[arg-type]
     )
 
-    wer = float(np.mean(wers)) if wers else 1.0
+    wer = float(np.mean([w for w in wers if np.isfinite(w)])) if any(np.isfinite(w) for w in wers) else 1.0
     click_p95 = float(np.mean(click_p95s)) if click_p95s else 0.0
 
     report = {"similarity": sim, "wer": wer, "click_p95": click_p95, "config": cfg_raw}
