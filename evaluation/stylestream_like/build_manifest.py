@@ -444,6 +444,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="How to form source-target pairs. 'all' builds the full cartesian product (paper-style).",
     )
 
+    # Optional revision pins (for repeatability over time). When omitted, we resolve the current sha via the HF API.
+    parser.add_argument("--globe_revision", type=str, default="", help="Optional dataset revision for MushanW/GLOBE")
+    parser.add_argument("--ravdess_revision", type=str, default="", help="Optional dataset revision for birgermoell/ravdess")
+    parser.add_argument("--librispeech_revision", type=str, default="", help="Optional dataset revision for openslr/librispeech_asr")
+    parser.add_argument("--l2_arctic_revision", type=str, default="", help="Optional dataset revision for akrishnan/l2_arctic_raw")
+
     parser.add_argument(
         "--globe_target_accents",
         type=str,
@@ -463,14 +469,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     api = HfApi()
-    globe_rev = api.dataset_info("MushanW/GLOBE").sha
-    ravdess_rev = api.dataset_info("birgermoell/ravdess").sha
+    globe_rev = str(args.globe_revision).strip() or api.dataset_info("MushanW/GLOBE").sha
+    ravdess_rev = str(args.ravdess_revision).strip() or api.dataset_info("birgermoell/ravdess").sha
 
     librispeech_rev: Optional[str] = None
     l2_arctic_rev: Optional[str] = None
     if args.preset == "stylestream_test":
-        librispeech_rev = api.dataset_info("openslr/librispeech_asr").sha
-        l2_arctic_rev = api.dataset_info("akrishnan/l2_arctic_raw").sha
+        librispeech_rev = str(args.librispeech_revision).strip() or api.dataset_info("openslr/librispeech_asr").sha
+        l2_arctic_rev = str(args.l2_arctic_revision).strip() or api.dataset_info("akrishnan/l2_arctic_raw").sha
 
     if args.preset == "default":
         sources = _download_globe_sources(

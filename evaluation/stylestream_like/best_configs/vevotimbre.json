@@ -1,0 +1,7 @@
+{
+  "kind": "vevotimbre",
+  "flow_matching_steps": 32,
+  "diffusion_cfg": 1.2,
+  "diffusion_rescale_cfg": 0.75,
+  "seed": 1234
+}

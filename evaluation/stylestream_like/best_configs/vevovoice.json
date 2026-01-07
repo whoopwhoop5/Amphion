@@ -1,0 +1,13 @@
+{
+  "kind": "vevovoice",
+  "flow_matching_steps": 16,
+  "diffusion_cfg": 1.2,
+  "diffusion_rescale_cfg": 0.75,
+  "seed": 1234,
+  "ar_max_length": 2000,
+  "ar_temperature": 0.8,
+  "ar_top_k": 50,
+  "ar_top_p": 0.9,
+  "ar_repeat_penalty": 1.0,
+  "ar_min_new_tokens": 50
+}
