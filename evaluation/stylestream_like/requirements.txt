@@ -7,3 +7,5 @@ speechbrain
 modelscope
 funasr
 addict
+# modelscope currently expects the pre-3.x HuggingFace `datasets` API.
+datasets<3.0.0
