@@ -148,9 +148,11 @@ def compute_speaker_similarity(
     raise ValueError(f"Unsupported similarity model: {model_name}")
 
 
-def _normalize_text(text: str) -> str:
-    for ch in [" ", ".", "'", "-", ",", "!", "?", "…", "，", "。", "！", "？"]:
+def _normalize_text_for_wer(text: str) -> str:
+    # Keep spaces (WER is word-based), remove common punctuation, lower-case.
+    for ch in [".", "'", "-", ",", "!", "?", "…", "，", "。", "！", "？", "\"", "“", "”"]:
         text = text.replace(ch, "")
+    text = " ".join(text.strip().split())
     return text.lower()
 
 
@@ -161,14 +163,15 @@ def compute_wer_whisper(
     audio_deg_path: str,
 ) -> float:
     ref = whisper_model.transcribe(audio_ref_path, verbose=False)
-    deg = whisper_model.transcribe(audio_deg_path, verbose=False)
+    lang = ref.get("language")
+    deg = whisper_model.transcribe(audio_deg_path, verbose=False, language=lang) if lang else whisper_model.transcribe(audio_deg_path, verbose=False)
 
     wer = WordErrorRate()
     if torch.cuda.is_available():
         wer = wer.to("cuda")
 
-    ref_text = _normalize_text(ref["text"])
-    deg_text = _normalize_text(deg["text"])
+    ref_text = _normalize_text_for_wer(ref["text"])
+    deg_text = _normalize_text_for_wer(deg["text"])
     return float(wer(deg_text, ref_text).detach().cpu().numpy().tolist())
 
 
