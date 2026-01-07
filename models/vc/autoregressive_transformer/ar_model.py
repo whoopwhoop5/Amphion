@@ -7,6 +7,7 @@ from transformers import LlamaConfig, LlamaForCausalLM
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
+from contextlib import nullcontext
 
 from models.vc.autoregressive_transformer.global_encoder import GlobalEncoder
 
@@ -285,59 +286,72 @@ class AutoregressiveTransformer(nn.Module):
             )
             prompt_output_ids = prompt_output_ids[:, :-1]  # remove the eos token
 
-        if self.use_global_style_encoder:
-            # When using global style encoder, prompt_mels is required
-            assert prompt_mels is not None
+        seed_ctx = nullcontext()
+        seed = None
+        if generator is not None:
+            seed = int(generator.initial_seed())
+            devices = [torch.cuda.current_device()] if torch.cuda.is_available() else []
+            seed_ctx = torch.random.fork_rng(devices=devices)
 
-            input_emb = self.model.model.embed_tokens(input_ids)
-            global_style_emb = self.global_encoder(
-                prompt_mels,
-                torch.ones_like(prompt_mels[:, :, 0]).to(prompt_mels.device),
-            ).unsqueeze(1)
+        with seed_ctx:
+            if seed is not None:
+                torch.manual_seed(seed)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(seed)
 
-            llama_input_emb = torch.cat([input_emb, global_style_emb], dim=1)
+            if self.use_global_style_encoder:
+                # When using global style encoder, prompt_mels is required
+                assert prompt_mels is not None
 
-            if prompt_output_ids is not None:
-                prompt_output_emb = self.model.model.embed_tokens(prompt_output_ids)
-                llama_input_emb = torch.cat([llama_input_emb, prompt_output_emb], dim=1)
+                input_emb = self.model.model.embed_tokens(input_ids)
+                global_style_emb = self.global_encoder(
+                    prompt_mels,
+                    torch.ones_like(prompt_mels[:, :, 0]).to(prompt_mels.device),
+                ).unsqueeze(1)
 
-            input_length = llama_input_emb.shape[1]
+                llama_input_emb = torch.cat([input_emb, global_style_emb], dim=1)
 
-            gen_tokens = self.model.generate(
-                inputs_embeds=llama_input_emb,
-                do_sample=True,
-                max_length=max_length,
-                pad_token_id=self.pad_token_id,
-                eos_token_id=self.output_eos_token_id,
-                temperature=temperature,
-                top_k=top_k,
-                top_p=top_p,
-                repetition_penalty=repeat_penalty,
-                min_new_tokens=min_new_tokens,
-                generator=generator,
-            )
-        else:
-            # When not using global style encoder, prompt_output_ids is required
-            assert prompt_output_ids is not None
+                if prompt_output_ids is not None:
+                    prompt_output_emb = self.model.model.embed_tokens(prompt_output_ids)
+                    llama_input_emb = torch.cat(
+                        [llama_input_emb, prompt_output_emb], dim=1
+                    )
 
-            llama_input_ids = torch.cat([input_ids, prompt_output_ids], dim=-1)
-            input_length = llama_input_ids.shape[1]
+                input_length = llama_input_emb.shape[1]
 
-            gen_tokens = self.model.generate(
-                llama_input_ids,
-                do_sample=True,
-                max_length=max_length,
-                pad_token_id=self.pad_token_id,
-                eos_token_id=self.output_eos_token_id,
-                temperature=temperature,
-                top_k=top_k,
-                top_p=top_p,
-                repetition_penalty=repeat_penalty,
-                min_new_tokens=min_new_tokens,
-                generator=generator,
-            )
+                gen_tokens = self.model.generate(
+                    inputs_embeds=llama_input_emb,
+                    do_sample=True,
+                    max_length=max_length,
+                    pad_token_id=self.pad_token_id,
+                    eos_token_id=self.output_eos_token_id,
+                    temperature=temperature,
+                    top_k=top_k,
+                    top_p=top_p,
+                    repetition_penalty=repeat_penalty,
+                    min_new_tokens=min_new_tokens,
+                )
+            else:
+                # When not using global style encoder, prompt_output_ids is required
+                assert prompt_output_ids is not None
 
-            gen_tokens = gen_tokens[:, input_length:]
+                llama_input_ids = torch.cat([input_ids, prompt_output_ids], dim=-1)
+                input_length = llama_input_ids.shape[1]
+
+                gen_tokens = self.model.generate(
+                    llama_input_ids,
+                    do_sample=True,
+                    max_length=max_length,
+                    pad_token_id=self.pad_token_id,
+                    eos_token_id=self.output_eos_token_id,
+                    temperature=temperature,
+                    top_k=top_k,
+                    top_p=top_p,
+                    repetition_penalty=repeat_penalty,
+                    min_new_tokens=min_new_tokens,
+                )
+
+                gen_tokens = gen_tokens[:, input_length:]
 
         if gen_tokens[:, 0] == self.output_bos_token_id:
             gen_tokens = gen_tokens[:, 1:]
