@@ -1,9 +1,24 @@
 ## Continuity Ledger
 - Goal (incl. success criteria): Build a Vevo-powered offline + live buffered voice conversion pipeline (≈1s latency) with a deterministic evaluation/auto-tuning harness and regression suite.
 - Constraints/Assumptions: Use Amphion’s official Vevo; enforce stable timing in a streaming wrapper; run heavy inference/eval on Vast RTX 4090 (CUDA 12.9); use git for sync; avoid committing secrets.
-- Key decisions: UNCONFIRMED
-- Done: Initialized Beads tracking (`bd init`).
-- Now: Survey existing Vevo inference entrypoints and model requirements; define wrapper API for offline + streaming.
-- Next: Implement offline CLI; implement live buffered mic->convert->playback; add deterministic eval harness + parameter search; add regression suite; wire GPU-host run scripts.
-- Open questions (UNCONFIRMED if needed): Target sample rate & hop sizes for Vevo; best duration-normalization strategy for minimal artifacts in streaming; preferred audio I/O backend on macOS (sounddevice vs. alternatives).
-- Working set (files/ids/commands): `CONTINUITY.md`, `.beads/*`, `bd list`, `bd ready`
+- Key decisions:
+  - Live architecture: GPU-host websocket server (`models/vc/vevo/live_server.py`) + local client (`models/vc/vevo/live_client.py`) with buffered window/hop processing and wrapper-level duration normalization + crossfade.
+  - Default model SR: 24kHz; client defaults to 48kHz I/O and resamples to/from 24kHz.
+  - Determinism: diffusion noise uses explicit generator; AR sampling uses forked RNG seeding for Transformers compatibility.
+  - GPU host env: `scripts/vast/setup_vevo_venv.sh` installs CUDA torch (cu121) and pins `transformers==4.41.2`.
+- Done:
+  - Added offline CLI (`python -m models.vc.vevo.convert`) supporting `vevotimbre` and `vevovoice`.
+  - Added live buffered pipeline (server/client) with length normalization and RMS loudness normalization.
+  - Added deterministic autotune + regression scripts (`evaluation/vevo_live/*`).
+  - Added Vast.ai helper scripts (`scripts/vast/*`) and committed eval assets (`assets/vevo_live/*`).
+  - Verified on Vast RTX 4090: offline `vevotimbre` + `vevovoice` smoke outputs generated (`scripts/vast/run_offline_smoke.sh`).
+- Now: Ready to run live server on GPU host and connect local client for real mic->playback testing; run longer autotune searches for best hop/steps tradeoff.
+- Next:
+  - Run extended `evaluation.vevo_live.search` on full clips (not truncated) and commit a “best config” JSON + thresholds.
+  - Improve eval speed (cache speaker/ASR models; avoid per-config reloads) and refine WER/content metric.
+  - Real-time polish: tune hop/window defaults, optional limiter, and document recommended audio devices/virtual mic.
+- Open questions (UNCONFIRMED if needed):
+  - Best hop/window for stability vs GPU load for `vevotimbre` live mode.
+  - Best content-preservation metric for VC (Whisper WER may be brittle under accent/voice changes).
+  - Whether to add a server-side batching/queue to prevent backlog under heavy configs.
+- Working set (files/ids/commands): `models/vc/vevo/{runner.py,convert.py,live_server.py,live_client.py,live_engine.py}`, `evaluation/vevo_live/{search.py,regress.py}`, `scripts/vast/*`, `bd ready`
