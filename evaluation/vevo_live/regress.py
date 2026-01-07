@@ -36,7 +36,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo_cache_dir", type=str, default="./ckpts/Vevo")
 
     parser.add_argument("--whisper_model", type=str, default="base")
-    parser.add_argument("--similarity_model", type=str, default="wavlm", choices=["wavlm", "rawnet", "resemblyzer"])
+    parser.add_argument(
+        "--similarity_model",
+        type=str,
+        default="wavlm",
+        choices=["wavlm", "resemblyzer"],
+    )
 
     # Conservative defaults; tune once you have baseline numbers.
     parser.add_argument("--min_similarity", type=float, default=0.20)
@@ -91,7 +96,6 @@ def main(argv: list[str] | None = None) -> int:
     sim = compute_speaker_similarity(
         ref_wav_path=args.reference_wav,
         deg_dir=str(deg_dir),
-        work_dir=str(out_dir / "work"),
         model_name=args.similarity_model,  # type: ignore[arg-type]
     )
 
@@ -115,4 +119,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

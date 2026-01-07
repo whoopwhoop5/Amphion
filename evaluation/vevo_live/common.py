@@ -7,20 +7,18 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal, Optional
 
 import numpy as np
+import torch.nn.functional as F
 import soundfile as sf
 import torch
 from torchmetrics import WordErrorRate
 
 import whisper
-
-from evaluation.metrics.similarity.speaker_similarity import extract_similarity
 from models.vc.vevo.live_engine import AudioRingBuffer, crossfade_inplace, normalize_length
 from models.vc.vevo.live_engine import VevoStreamingEngine
 from models.vc.vevo.runner import VevoConverter
@@ -91,22 +89,63 @@ def compute_speaker_similarity(
     *,
     ref_wav_path: str,
     deg_dir: str,
-    work_dir: str,
-    model_name: Literal["wavlm", "rawnet", "resemblyzer"] = "wavlm",
+    model_name: Literal["wavlm", "resemblyzer"] = "wavlm",
 ) -> float:
-    ref_dir = os.path.join(work_dir, "ref")
-    Path(ref_dir).mkdir(parents=True, exist_ok=True)
-    ref_dst = os.path.join(ref_dir, "ref.wav")
-    if not os.path.exists(ref_dst):
-        # Copy once for determinism.
-        Path(ref_dst).write_bytes(Path(ref_wav_path).read_bytes())
+    deg_paths = sorted(str(p) for p in Path(deg_dir).glob("*.wav"))
+    if not deg_paths:
+        raise FileNotFoundError(f"No .wav files found in: {deg_dir}")
 
-    score = extract_similarity(
-        ref_dir,
-        deg_dir,
-        kwargs={"model_name": model_name, "similarity_mode": "overall"},
-    )
-    return float(score)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if model_name == "resemblyzer":
+        from resemblyzer import VoiceEncoder, preprocess_wav
+
+        encoder = VoiceEncoder().to(device)
+        ref_wav = preprocess_wav(ref_wav_path)
+        ref_emb = torch.from_numpy(encoder.embed_utterance(ref_wav)).to(device)
+        ref_emb = F.normalize(ref_emb, dim=0)
+
+        scores = []
+        for p in deg_paths:
+            wav = preprocess_wav(p)
+            emb = torch.from_numpy(encoder.embed_utterance(wav)).to(device)
+            emb = F.normalize(emb, dim=0)
+            scores.append(F.cosine_similarity(ref_emb, emb, dim=0).detach().cpu().item())
+        return float(np.mean(scores))
+
+    if model_name == "wavlm":
+        import librosa
+        from transformers import Wav2Vec2FeatureExtractor, WavLMForXVector
+
+        feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
+            "microsoft/wavlm-base-plus-sv"
+        )
+        model = WavLMForXVector.from_pretrained("microsoft/wavlm-base-plus-sv").to(device)
+
+        ref_wav, _ = librosa.load(ref_wav_path, sr=16000)
+        ref_inputs = feature_extractor(
+            [ref_wav], padding=True, return_tensors="pt", sampling_rate=16000
+        )
+        ref_inputs = {k: v.to(device) for k, v in ref_inputs.items()}
+        with torch.no_grad():
+            ref_emb = model(**ref_inputs).embeddings[0]
+            ref_emb = F.normalize(ref_emb, dim=0)
+
+        scores = []
+        for p in deg_paths:
+            wav, _ = librosa.load(p, sr=16000)
+            inputs = feature_extractor(
+                [wav], padding=True, return_tensors="pt", sampling_rate=16000
+            )
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            with torch.no_grad():
+                emb = model(**inputs).embeddings[0]
+                emb = F.normalize(emb, dim=0)
+                scores.append(F.cosine_similarity(ref_emb, emb, dim=0).detach().cpu().item())
+
+        return float(np.mean(scores))
+
+    raise ValueError(f"Unsupported similarity model: {model_name}")
 
 
 def _normalize_text(text: str) -> str:
@@ -259,4 +298,3 @@ def load_whisper(model_size: str = "base"):
     if torch.cuda.is_available():
         model = model.to("cuda")
     return model
-
