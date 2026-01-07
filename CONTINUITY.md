@@ -14,10 +14,9 @@
   - Verified on Vast RTX 4090: offline `vevotimbre` + `vevovoice` smoke outputs generated (`scripts/vast/run_offline_smoke.sh`).
   - Improved eval harness: cached speaker similarity scorer, added HuBERT content similarity metric, fixed streaming alignment (delay) for WER/content scoring, and made Whisper/Vevo imports lazy for CLI usability.
   - Ran Vast smoke autotune and recorded best `vevotimbre` config + metrics under `evaluation/vevo_live/best_configs/`.
-- Now: Run an extended `evaluation.vevo_live.search` on Vast to pick a best config and set regression thresholds; then validate live mic->playback with the chosen window/hop.
+- Now: Validate live mic->playback using the committed best config (`evaluation/vevo_live/best_configs/vevotimbre.json`) and run an extended search (longer clips) to firm up regression thresholds.
 - Next:
-  - Run extended `evaluation.vevo_live.search` on full clips (not truncated) and commit a “best config” JSON + thresholds.
-  - Improve eval speed (cache speaker/ASR models; avoid per-config reloads) and refine WER/content metric.
+  - Run extended `evaluation.vevo_live.search` on full clips (not truncated) and commit updated thresholds.
   - Real-time polish: tune hop/window defaults, optional limiter, and document recommended audio devices/virtual mic.
 - Open questions (UNCONFIRMED if needed):
   - Best hop/window for stability vs GPU load for `vevotimbre` live mode.
