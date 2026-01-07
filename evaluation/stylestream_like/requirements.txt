@@ -1,0 +1,9 @@
+# Extra dependencies to reproduce StyleStream-style objective metrics.
+#
+# Install into the same venv as Vevo (after torch/torchaudio).
+
+pyarrow
+speechbrain
+modelscope
+funasr
+
