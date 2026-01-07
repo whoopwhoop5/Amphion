@@ -1,0 +1,11 @@
+{
+  "cfg_uid": "2d6447ca78",
+  "speaker_similarity": 0.771778792142868,
+  "content_hubert_cos": 0.8880934417247772,
+  "content_hubert_cos_valid_frac": 1.0,
+  "wer": 0.8333333333333334,
+  "wer_valid_frac": 0.5,
+  "glitch_boundary_jump_ratio_p95": 21.283246994018555,
+  "mean_window_sec": 0.3089563250541687,
+  "score": 0.04385856250921869
+}
