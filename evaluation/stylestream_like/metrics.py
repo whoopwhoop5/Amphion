@@ -163,7 +163,17 @@ class Emotion2VecEmbedder:
             extract_embedding=True,
         )
 
-        # ModelScope returns a dict-like; embeddings may be under different keys depending on version.
+        # ModelScope/FunASR commonly returns a list of dicts (one per utterance). Normalize to a dict.
+        if isinstance(out, list):
+            if not out:
+                raise ValueError("emotion2vec output is an empty list")
+            if len(out) != 1:
+                # We only ever pass a single utterance path; pick the first entry deterministically.
+                out = out[0]
+            else:
+                out = out[0]
+
+        # Embeddings may be under different keys depending on version.
         if isinstance(out, dict):
             for k in ["embedding", "embeddings", "feats", "features"]:
                 if k in out:
