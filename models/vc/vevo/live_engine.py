@@ -65,6 +65,20 @@ def crossfade_inplace(
     return current
 
 
+def normalize_rms_db(
+    wav: np.ndarray,
+    *,
+    target_db: float = -25.0,
+    eps: float = 1e-9,
+) -> np.ndarray:
+    wav = np.asarray(wav, dtype=np.float32).reshape(-1)
+    rms = float(np.sqrt(np.mean(wav * wav) + eps))
+    cur_db = 20.0 * float(np.log10(rms + eps))
+    gain_db = float(target_db) - cur_db
+    gain = float(10.0 ** (gain_db / 20.0))
+    return (wav * gain).astype(np.float32, copy=False)
+
+
 class AudioRingBuffer:
     def __init__(self, capacity: int):
         if capacity <= 0:
@@ -189,6 +203,8 @@ class VevoStreamingEngine:
         diffusion_cfg: float = 1.0,
         diffusion_rescale_cfg: float = 0.75,
         seed: Optional[int] = None,
+        target_db: float = -25.0,
+        clip: bool = True,
         # vevovoice knobs
         ar_max_length: int = 2000,
         ar_temperature: float = 0.8,
@@ -275,5 +291,7 @@ class VevoStreamingEngine:
 
         synthesized_audio = self.pipeline.vocoder_model(predict_mel_feat.transpose(1, 2)).detach()
         audio = synthesized_audio[0, 0].float().cpu().numpy()
+        audio = normalize_rms_db(audio, target_db=target_db)
+        if clip:
+            audio = np.clip(audio, -1.0, 1.0).astype(np.float32, copy=False)
         return audio
-
