@@ -14,9 +14,10 @@ import soundfile as sf
 
 from evaluation.vevo_live.common import (
     EvalConfig,
+    SpeakerSimilarityScorer,
     VevoInferenceConfig,
     VevoStreamingConfig,
-    compute_speaker_similarity,
+    compute_content_similarity_hubert,
     compute_wer_whisper,
     glitch_metrics,
     list_wavs,
@@ -24,7 +25,6 @@ from evaluation.vevo_live.common import (
     simulate_streaming,
     write_wav,
 )
-from models.vc.vevo.runner import VevoConverter
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -45,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Conservative defaults; tune once you have baseline numbers.
     parser.add_argument("--min_similarity", type=float, default=0.20)
+    parser.add_argument("--min_content_hubert", type=float, default=0.00)
     parser.add_argument("--max_wer", type=float, default=0.55)
     parser.add_argument("--max_click_p95", type=float, default=50.0)
     args = parser.parse_args(argv)
@@ -61,18 +62,26 @@ def main(argv: list[str] | None = None) -> int:
     wavs = list_wavs(args.playlist_dir)
     whisper_model = load_whisper(args.whisper_model)
 
+    from models.vc.vevo.runner import VevoConverter
+
     converter = VevoConverter.from_pretrained(
         kind=cfg.inference.kind,  # type: ignore[arg-type]
         repo_cache_dir=args.repo_cache_dir,
+    )
+    speaker_scorer = SpeakerSimilarityScorer(
+        model_name=args.similarity_model,  # type: ignore[arg-type]
+        ref_wav_path=args.reference_wav,
+        device=converter.device,
     )
 
     deg_dir = out_dir / "deg"
     deg_dir.mkdir(parents=True, exist_ok=True)
 
     wers = []
+    content_cos = []
     click_p95s = []
     for wav in wavs[:2]:
-        out_wav, sr, _ = simulate_streaming(
+        out_wav, sr, stream_stats = simulate_streaming(
             converter,
             reference_wav_path=args.reference_wav,
             source_wav_path=wav,
@@ -89,38 +98,58 @@ def main(argv: list[str] | None = None) -> int:
         if int(src_sr) != sr:
             raise ValueError(f"Expected {sr}Hz wav in playlist, got {src_sr}Hz: {wav}")
         n = len(out_wav)
-        src_trim = np.asarray(src_wav).reshape(-1)[:n]
+        delay_samples = int(stream_stats.get("delay_samples", 0))
+        src_trim = np.asarray(src_wav).reshape(-1)[delay_samples : delay_samples + n]
         if len(src_trim) < n:
             src_trim = np.pad(src_trim, (0, n - len(src_trim)), mode="constant")
         ref_trim_path = out_dir / "ref_trim" / (Path(wav).stem + ".wav")
         write_wav(str(ref_trim_path), src_trim, sr)
 
-        wers.append(
-            compute_wer_whisper(
-                whisper_model,
-                audio_ref_path=str(ref_trim_path),
-                audio_deg_path=str(out_path),
+        wer = compute_wer_whisper(
+            whisper_model,
+            audio_ref_path=str(ref_trim_path),
+            audio_deg_path=str(out_path),
+        )
+        wers.append(wer)
+
+        content_cos.append(
+            compute_content_similarity_hubert(
+                converter,
+                src_wav=np.asarray(src_trim, dtype=np.float32).reshape(-1),
+                deg_wav=np.asarray(out_wav, dtype=np.float32).reshape(-1),
+                sample_rate=sr,
             )
         )
-        out_loaded, _ = sf.read(out_path, dtype="float32")
-        gm = glitch_metrics(np.asarray(out_loaded).reshape(-1), hop_samples=int(round(cfg.streaming.hop_ms / 1000 * sr)))
+
+        gm = glitch_metrics(
+            np.asarray(out_wav).reshape(-1),
+            hop_samples=int(round(cfg.streaming.hop_ms / 1000 * sr)),
+        )
         click_p95s.append(gm["boundary_jump_ratio_p95"])
 
-    sim = compute_speaker_similarity(
-        ref_wav_path=args.reference_wav,
-        deg_dir=str(deg_dir),
-        model_name=args.similarity_model,  # type: ignore[arg-type]
-    )
-
+    sim = speaker_scorer.score_dir(str(deg_dir))
     wer = float(np.mean([w for w in wers if np.isfinite(w)])) if any(np.isfinite(w) for w in wers) else 1.0
+    content = (
+        float(np.mean([c for c in content_cos if np.isfinite(c)]))
+        if any(np.isfinite(c) for c in content_cos)
+        else float("nan")
+    )
     click_p95 = float(np.mean(click_p95s)) if click_p95s else 0.0
 
-    report = {"similarity": sim, "wer": wer, "click_p95": click_p95, "config": cfg_raw}
+    report = {
+        "similarity": sim,
+        "content_hubert_cos": content,
+        "wer": wer,
+        "click_p95": click_p95,
+        "config": cfg_raw,
+    }
     (out_dir / "report.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report, indent=2), flush=True)
 
     ok = True
     if sim < args.min_similarity:
+        ok = False
+    if np.isfinite(content) and content < args.min_content_hubert:
         ok = False
     if wer > args.max_wer:
         ok = False

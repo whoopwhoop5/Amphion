@@ -17,9 +17,10 @@ import soundfile as sf
 
 from evaluation.vevo_live.common import (
     EvalConfig,
+    SpeakerSimilarityScorer,
     VevoInferenceConfig,
     VevoStreamingConfig,
-    compute_speaker_similarity,
+    compute_content_similarity_hubert,
     compute_wer_whisper,
     glitch_metrics,
     list_wavs,
@@ -27,18 +28,23 @@ from evaluation.vevo_live.common import (
     simulate_streaming,
     write_wav,
 )
-from models.vc.vevo.runner import VevoConverter
 
 
 def score_result(metrics: dict[str, Any]) -> float:
     # Higher is better.
     sim = float(metrics.get("speaker_similarity", 0.0))
+    content = float(metrics.get("content_hubert_cos", 0.0))
     wer = float(metrics.get("wer", 1.0))
     click = float(metrics.get("glitch_boundary_jump_ratio_p95", 0.0))
     window_sec = float(metrics.get("mean_window_sec", 9e9))
 
+    if not np.isfinite(content):
+        content = 0.0
+    if not np.isfinite(wer):
+        wer = 1.0
+
     # Penalize instability + slow configs. Weights chosen to be conservative; adjust as needed.
-    return sim - 0.5 * wer - 0.02 * click - 0.05 * window_sec
+    return 0.60 * sim + 0.40 * content - 0.40 * wer - 0.02 * click - 0.05 * window_sec
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -70,9 +76,16 @@ def main(argv: list[str] | None = None) -> int:
     wavs = list_wavs(args.playlist_dir)[: args.max_files]
     whisper_model = load_whisper(args.whisper_model)
 
+    from models.vc.vevo.runner import VevoConverter
+
     converter = VevoConverter.from_pretrained(
         kind=args.kind,  # type: ignore[arg-type]
         repo_cache_dir=args.repo_cache_dir,
+    )
+    speaker_scorer = SpeakerSimilarityScorer(
+        model_name=args.similarity_model,  # type: ignore[arg-type]
+        ref_wav_path=args.reference_wav,
+        device=converter.device,
     )
 
     # Deterministic grid (small by default).
@@ -102,6 +115,10 @@ def main(argv: list[str] | None = None) -> int:
                 cfg_dir.mkdir(parents=True, exist_ok=True)
 
                 per_file = []
+                wers = []
+                content_cos = []
+                clicks = []
+                mean_window_secs = []
                 for wav in wavs:
                     out_wav, sr, stream_stats = simulate_streaming(
                         converter,
@@ -124,11 +141,35 @@ def main(argv: list[str] | None = None) -> int:
                     if int(src_sr) != sr:
                         raise ValueError(f"Expected {sr}Hz wav in playlist, got {src_sr}Hz: {wav}")
                     n = len(out_wav)
-                    src_trim = np.asarray(src_wav).reshape(-1)[:n]
+                    delay_samples = int(stream_stats.get("delay_samples", 0))
+                    src_trim = np.asarray(src_wav).reshape(-1)[delay_samples : delay_samples + n]
                     if len(src_trim) < n:
                         src_trim = np.pad(src_trim, (0, n - len(src_trim)), mode="constant")
                     ref_trim_path = ref_trim_dir / (Path(wav).stem + ".wav")
                     write_wav(str(ref_trim_path), src_trim, sr)
+
+                    wer = compute_wer_whisper(
+                        whisper_model,
+                        audio_ref_path=str(ref_trim_path),
+                        audio_deg_path=str(out_path),
+                    )
+                    wers.append(wer)
+
+                    content_cos.append(
+                        compute_content_similarity_hubert(
+                            converter,
+                            src_wav=np.asarray(src_trim, dtype=np.float32).reshape(-1),
+                            deg_wav=np.asarray(out_wav, dtype=np.float32).reshape(-1),
+                            sample_rate=sr,
+                        )
+                    )
+
+                    gm = glitch_metrics(
+                        np.asarray(out_wav).reshape(-1),
+                        hop_samples=int(round(cfg.streaming.hop_ms / 1000 * sr)),
+                    )
+                    clicks.append(gm["boundary_jump_ratio_p95"])
+                    mean_window_secs.append(float(stream_stats.get("mean_window_sec", 0.0)))
 
                     per_file.append(
                         {
@@ -136,46 +177,26 @@ def main(argv: list[str] | None = None) -> int:
                             "ref_trim_wav": str(ref_trim_path),
                             "out_wav": str(out_path),
                             "out_samples": int(n),
+                            "wer": float(wer) if np.isfinite(wer) else float("nan"),
+                            "content_hubert_cos": float(content_cos[-1])
+                            if np.isfinite(content_cos[-1])
+                            else float("nan"),
+                            "glitch_boundary_jump_ratio_p95": float(gm["boundary_jump_ratio_p95"]),
                             **stream_stats,
                         }
                     )
 
-                # Folder-level metrics
-                deg_dir = str(cfg_dir / "deg")
-                sim = compute_speaker_similarity(
-                    ref_wav_path=args.reference_wav,
-                    deg_dir=deg_dir,
-                    model_name=args.similarity_model,  # type: ignore[arg-type]
-                )
-
-                wers = []
-                clicks = []
-                mean_window_secs = []
-                for row in per_file:
-                    wers.append(
-                        compute_wer_whisper(
-                            whisper_model,
-                            audio_ref_path=row["ref_trim_wav"],
-                            audio_deg_path=row["out_wav"],
-                        )
-                    )
-
-                    out_loaded, out_sr = sf.read(row["out_wav"], dtype="float32")
-                    if out_loaded.ndim > 1:
-                        out_loaded = out_loaded[:, 0]
-                    gm = glitch_metrics(
-                        np.asarray(out_loaded).reshape(-1),
-                        hop_samples=int(round(cfg.streaming.hop_ms / 1000 * out_sr)),
-                    )
-                    clicks.append(gm["boundary_jump_ratio_p95"])
-                    mean_window_secs.append(float(row["mean_window_sec"]))
+                sim = speaker_scorer.score_dir(str(cfg_dir / "deg"))
+                valid_wers = [w for w in wers if np.isfinite(w)]
+                valid_content = [c for c in content_cos if np.isfinite(c)]
 
                 metrics = {
                     "cfg_uid": cfg_uid,
                     "speaker_similarity": sim,
-                    "wer": float(np.mean([w for w in wers if np.isfinite(w)]))
-                    if any(np.isfinite(w) for w in wers)
-                    else 1.0,
+                    "content_hubert_cos": float(np.mean(valid_content)) if valid_content else float("nan"),
+                    "content_hubert_cos_valid_frac": float(len(valid_content) / max(1, len(content_cos))),
+                    "wer": float(np.mean(valid_wers)) if valid_wers else float("nan"),
+                    "wer_valid_frac": float(len(valid_wers) / max(1, len(wers))),
                     "glitch_boundary_jump_ratio_p95": float(np.mean(clicks)) if clicks else 0.0,
                     "mean_window_sec": float(np.mean(mean_window_secs)) if mean_window_secs else 0.0,
                 }
@@ -202,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
 
                 print(
                     f"[search] cfg={cfg_uid} flow={flow_steps} hop={hop_ms} fade={fade_ms} "
-                    f"sim={sim:.3f} wer={metrics['wer']:.3f} click={metrics['glitch_boundary_jump_ratio_p95']:.2f} "
+                    f"sim={sim:.3f} hubert={metrics['content_hubert_cos']:.3f} wer={metrics['wer']:.3f} click={metrics['glitch_boundary_jump_ratio_p95']:.2f} "
                     f"win_s={metrics['mean_window_sec']:.2f} score={metrics['score']:.3f} best={best_score:.3f}",
                     flush=True,
                 )

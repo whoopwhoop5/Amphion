@@ -10,18 +10,16 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 import numpy as np
 import torch.nn.functional as F
 import soundfile as sf
 import torch
-from torchmetrics import WordErrorRate
+import torchaudio
 
-import whisper
-from models.vc.vevo.live_engine import AudioRingBuffer, crossfade_inplace, normalize_length
-from models.vc.vevo.live_engine import VevoStreamingEngine
-from models.vc.vevo.runner import VevoConverter
+if TYPE_CHECKING:
+    from models.vc.vevo.runner import VevoConverter
 
 
 VevoKind = Literal["vevotimbre", "vevovoice"]
@@ -85,67 +83,142 @@ def write_wav(path: str, wav: np.ndarray, sr: int) -> None:
     sf.write(path, wav.astype(np.float32, copy=False), sr)
 
 
-def compute_speaker_similarity(
-    *,
-    ref_wav_path: str,
-    deg_dir: str,
-    model_name: Literal["wavlm", "resemblyzer"] = "wavlm",
-) -> float:
-    deg_paths = sorted(str(p) for p in Path(deg_dir).glob("*.wav"))
-    if not deg_paths:
-        raise FileNotFoundError(f"No .wav files found in: {deg_dir}")
+class SpeakerSimilarityScorer:
+    def __init__(
+        self,
+        *,
+        model_name: Literal["wavlm", "resemblyzer"],
+        ref_wav_path: str,
+        device: Optional[torch.device] = None,
+    ) -> None:
+        self.model_name = model_name
+        self.ref_wav_path = ref_wav_path
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self._resemblyzer_encoder = None
+        self._wavlm_feature_extractor = None
+        self._wavlm_model = None
 
-    if model_name == "resemblyzer":
-        from resemblyzer import VoiceEncoder, preprocess_wav
+        self._ref_emb: Optional[torch.Tensor] = None
 
-        encoder = VoiceEncoder().to(device)
-        ref_wav = preprocess_wav(ref_wav_path)
-        ref_emb = torch.from_numpy(encoder.embed_utterance(ref_wav)).to(device)
-        ref_emb = F.normalize(ref_emb, dim=0)
+        if self.model_name == "resemblyzer":
+            from resemblyzer import VoiceEncoder, preprocess_wav
 
-        scores = []
-        for p in deg_paths:
-            wav = preprocess_wav(p)
-            emb = torch.from_numpy(encoder.embed_utterance(wav)).to(device)
-            emb = F.normalize(emb, dim=0)
-            scores.append(F.cosine_similarity(ref_emb, emb, dim=0).detach().cpu().item())
-        return float(np.mean(scores))
-
-    if model_name == "wavlm":
-        import librosa
-        from transformers import Wav2Vec2FeatureExtractor, WavLMForXVector
-
-        feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
-            "microsoft/wavlm-base-plus-sv"
-        )
-        model = WavLMForXVector.from_pretrained("microsoft/wavlm-base-plus-sv").to(device)
-
-        ref_wav, _ = librosa.load(ref_wav_path, sr=16000)
-        ref_inputs = feature_extractor(
-            [ref_wav], padding=True, return_tensors="pt", sampling_rate=16000
-        )
-        ref_inputs = {k: v.to(device) for k, v in ref_inputs.items()}
-        with torch.no_grad():
-            ref_emb = model(**ref_inputs).embeddings[0]
-            ref_emb = F.normalize(ref_emb, dim=0)
-
-        scores = []
-        for p in deg_paths:
-            wav, _ = librosa.load(p, sr=16000)
-            inputs = feature_extractor(
-                [wav], padding=True, return_tensors="pt", sampling_rate=16000
+            self._preprocess_wav = preprocess_wav
+            self._resemblyzer_encoder = VoiceEncoder().to(self.device).eval()
+            ref_wav = self._preprocess_wav(self.ref_wav_path)
+            ref_emb = torch.from_numpy(self._resemblyzer_encoder.embed_utterance(ref_wav)).to(
+                self.device
             )
-            inputs = {k: v.to(device) for k, v in inputs.items()}
+            self._ref_emb = F.normalize(ref_emb, dim=0)
+        elif self.model_name == "wavlm":
+            import librosa
+            from transformers import Wav2Vec2FeatureExtractor, WavLMForXVector
+
+            self._librosa = librosa
+            self._wavlm_feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
+                "microsoft/wavlm-base-plus-sv"
+            )
+            self._wavlm_model = WavLMForXVector.from_pretrained(
+                "microsoft/wavlm-base-plus-sv"
+            ).to(self.device).eval()
+
+            ref_wav, _ = self._librosa.load(self.ref_wav_path, sr=16000)
+            ref_inputs = self._wavlm_feature_extractor(
+                [ref_wav], padding=True, return_tensors="pt", sampling_rate=16000
+            )
+            ref_inputs = {k: v.to(self.device) for k, v in ref_inputs.items()}
             with torch.no_grad():
-                emb = model(**inputs).embeddings[0]
+                ref_emb = self._wavlm_model(**ref_inputs).embeddings[0]
+                self._ref_emb = F.normalize(ref_emb, dim=0)
+        else:
+            raise ValueError(f"Unsupported similarity model: {self.model_name}")
+
+    def score_dir(self, deg_dir: str) -> float:
+        deg_paths = sorted(str(p) for p in Path(deg_dir).glob("*.wav"))
+        if not deg_paths:
+            raise FileNotFoundError(f"No .wav files found in: {deg_dir}")
+        return self.score_paths(deg_paths)
+
+    def score_paths(self, deg_paths: list[str]) -> float:
+        assert self._ref_emb is not None
+        scores: list[float] = []
+
+        if self.model_name == "resemblyzer":
+            assert self._resemblyzer_encoder is not None
+            for p in deg_paths:
+                wav = self._preprocess_wav(p)  # type: ignore[attr-defined]
+                emb = torch.from_numpy(self._resemblyzer_encoder.embed_utterance(wav)).to(
+                    self.device
+                )
                 emb = F.normalize(emb, dim=0)
-                scores.append(F.cosine_similarity(ref_emb, emb, dim=0).detach().cpu().item())
+                scores.append(
+                    float(F.cosine_similarity(self._ref_emb, emb, dim=0).detach().cpu().item())
+                )
+            return float(np.mean(scores))
 
-        return float(np.mean(scores))
+        if self.model_name == "wavlm":
+            assert self._wavlm_feature_extractor is not None
+            assert self._wavlm_model is not None
+            for p in deg_paths:
+                wav, _ = self._librosa.load(p, sr=16000)  # type: ignore[attr-defined]
+                inputs = self._wavlm_feature_extractor(
+                    [wav], padding=True, return_tensors="pt", sampling_rate=16000
+                )
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                with torch.no_grad():
+                    emb = self._wavlm_model(**inputs).embeddings[0]
+                    emb = F.normalize(emb, dim=0)
+                    scores.append(
+                        float(
+                            F.cosine_similarity(self._ref_emb, emb, dim=0)
+                            .detach()
+                            .cpu()
+                            .item()
+                        )
+                    )
+            return float(np.mean(scores))
 
-    raise ValueError(f"Unsupported similarity model: {model_name}")
+        raise ValueError(f"Unsupported similarity model: {self.model_name}")
+
+
+@torch.no_grad()
+def compute_content_similarity_hubert(
+    converter: "VevoConverter",
+    *,
+    src_wav: np.ndarray,
+    deg_wav: np.ndarray,
+    sample_rate: int,
+) -> float:
+    """Content similarity using mean-pooled HuBERT features (cosine)."""
+
+    device = converter.device
+    pipe = converter.pipeline
+
+    src = torch.from_numpy(np.asarray(src_wav, dtype=np.float32)).unsqueeze(0).to(device)
+    deg = torch.from_numpy(np.asarray(deg_wav, dtype=np.float32)).unsqueeze(0).to(device)
+
+    if sample_rate != 16000:
+        src_16k = torchaudio.functional.resample(src, sample_rate, 16000)
+        deg_16k = torchaudio.functional.resample(deg, sample_rate, 16000)
+    else:
+        src_16k = src
+        deg_16k = deg
+
+    feats_src, len_src = pipe.extract_hubert_feature(src_16k, output_layer=18)
+    feats_deg, len_deg = pipe.extract_hubert_feature(deg_16k, output_layer=18)
+
+    ls = int(len_src[0].detach().cpu().item())
+    ld = int(len_deg[0].detach().cpu().item())
+    if ls <= 0 or ld <= 0:
+        return float("nan")
+
+    emb_src = feats_src[0, :ls].mean(dim=0)
+    emb_deg = feats_deg[0, :ld].mean(dim=0)
+    emb_src = F.normalize(emb_src, dim=0)
+    emb_deg = F.normalize(emb_deg, dim=0)
+
+    return float(F.cosine_similarity(emb_src, emb_deg, dim=0).detach().cpu().item())
 
 
 def _normalize_text_for_wer(text: str) -> str:
@@ -156,6 +229,31 @@ def _normalize_text_for_wer(text: str) -> str:
     return text.lower()
 
 
+def _word_error_rate(hyp_words: list[str], ref_words: list[str]) -> float:
+    if not ref_words:
+        return float("nan")
+
+    # Classic Levenshtein distance on word tokens.
+    n = len(ref_words)
+    m = len(hyp_words)
+    dp = np.zeros((n + 1, m + 1), dtype=np.int32)
+    dp[:, 0] = np.arange(n + 1, dtype=np.int32)
+    dp[0, :] = np.arange(m + 1, dtype=np.int32)
+
+    for i in range(1, n + 1):
+        r = ref_words[i - 1]
+        for j in range(1, m + 1):
+            h = hyp_words[j - 1]
+            cost = 0 if r == h else 1
+            dp[i, j] = min(
+                dp[i - 1, j] + 1,  # deletion
+                dp[i, j - 1] + 1,  # insertion
+                dp[i - 1, j - 1] + cost,  # substitution
+            )
+
+    return float(dp[n, m]) / float(n)
+
+
 def compute_wer_whisper(
     whisper_model,
     *,
@@ -164,18 +262,18 @@ def compute_wer_whisper(
 ) -> float:
     ref = whisper_model.transcribe(audio_ref_path, verbose=False)
     lang = ref.get("language")
-    deg = whisper_model.transcribe(audio_deg_path, verbose=False, language=lang) if lang else whisper_model.transcribe(audio_deg_path, verbose=False)
-
-    wer = WordErrorRate()
-    if torch.cuda.is_available():
-        wer = wer.to("cuda")
+    deg = (
+        whisper_model.transcribe(audio_deg_path, verbose=False, language=lang)
+        if lang
+        else whisper_model.transcribe(audio_deg_path, verbose=False)
+    )
 
     ref_text = _normalize_text_for_wer(ref["text"])
     deg_text = _normalize_text_for_wer(deg["text"])
     if not ref_text:
         # Avoid divide-by-zero inside WER when reference has 0 words.
         return float("nan")
-    return float(wer(deg_text, ref_text).detach().cpu().numpy().tolist())
+    return _word_error_rate(deg_text.split(), ref_text.split())
 
 
 def glitch_metrics(
@@ -188,7 +286,7 @@ def glitch_metrics(
         return {"boundary_jump_ratio_mean": 0.0, "boundary_jump_ratio_p95": 0.0}
 
     diffs = np.abs(np.diff(wav))
-    base = float(np.median(diffs)) + 1e-6
+    base = max(float(np.median(diffs)), 1e-3)
 
     jumps = []
     for idx in range(hop_samples, len(wav), hop_samples):
@@ -208,16 +306,24 @@ def glitch_metrics(
 
 @torch.no_grad()
 def simulate_streaming(
-    converter: VevoConverter,
+    converter: "VevoConverter",
     *,
     reference_wav_path: str,
     source_wav_path: str,
     cfg: EvalConfig,
     max_hops: int = 0,
+    drop_warmup_hops: bool = True,
 ) -> tuple[np.ndarray, int, dict[str, Any]]:
     """Run a deterministic, server-equivalent streaming simulation on a single file."""
 
     set_determinism(cfg.inference.seed)
+
+    from models.vc.vevo.live_engine import (
+        AudioRingBuffer,
+        VevoStreamingEngine,
+        crossfade_inplace,
+        normalize_length,
+    )
 
     engine = VevoStreamingEngine(converter)
     engine.prepare_reference_bytes(Path(reference_wav_path).read_bytes())
@@ -236,11 +342,13 @@ def simulate_streaming(
     prev_tail = None
     outs = []
 
-    hop_count = 0
+    input_hops = 0
+    warmup_hops = 0
+    window_count = 0
     timings = []
 
     for start in range(0, len(src), hop_samples):
-        if max_hops and hop_count >= max_hops:
+        if max_hops and window_count >= max_hops:
             break
 
         chunk = src[start : start + hop_samples]
@@ -249,8 +357,10 @@ def simulate_streaming(
         ring.write(chunk)
 
         if ring.size < window_samples:
-            outs.append(np.zeros(hop_samples, dtype=np.float32))
-            hop_count += 1
+            warmup_hops += 1
+            input_hops += 1
+            if not drop_warmup_hops:
+                outs.append(np.zeros(hop_samples, dtype=np.float32))
             continue
 
         window = ring.read_last(window_samples)
@@ -260,7 +370,7 @@ def simulate_streaming(
             flow_matching_steps=cfg.inference.flow_matching_steps,
             diffusion_cfg=cfg.inference.diffusion_cfg,
             diffusion_rescale_cfg=cfg.inference.diffusion_rescale_cfg,
-            seed=cfg.inference.seed + hop_count,
+            seed=cfg.inference.seed + window_count,
             ar_max_length=cfg.inference.ar_max_length,
             ar_temperature=cfg.inference.ar_temperature,
             ar_top_k=cfg.inference.ar_top_k,
@@ -277,15 +387,19 @@ def simulate_streaming(
         prev_tail = hop[-fade_samples:].copy() if fade_samples > 0 else None
 
         outs.append(hop)
-        hop_count += 1
+        window_count += 1
+        input_hops += 1
 
     out = np.concatenate(outs) if outs else np.zeros(0, dtype=np.float32)
 
     stats = {
-        "hop_count": hop_count,
+        "input_hops": input_hops,
+        "warmup_hops": warmup_hops,
+        "window_count": window_count,
         "window_ms": cfg.streaming.window_ms,
         "hop_ms": cfg.streaming.hop_ms,
         "fade_ms": cfg.streaming.fade_ms,
+        "delay_samples": int(window_samples - hop_samples),
         "mean_window_sec": float(np.mean(timings)) if timings else 0.0,
         "p95_window_sec": float(np.percentile(timings, 95)) if timings else 0.0,
     }
@@ -300,6 +414,14 @@ def list_wavs(playlist_dir: str) -> list[str]:
 
 
 def load_whisper(model_size: str = "base"):
+    try:
+        import whisper  # type: ignore[import-not-found]
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError(
+            "Missing dependency 'openai-whisper'. Install it to enable WER scoring "
+            "(e.g., `pip install -U openai-whisper`)."
+        ) from e
+
     model = whisper.load_model(model_size)
     if torch.cuda.is_available():
         model = model.to("cuda")
