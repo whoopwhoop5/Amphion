@@ -82,10 +82,23 @@ def main(argv: list[str] | None = None) -> int:
         out_path = deg_dir / (Path(wav).stem + ".wav")
         write_wav(str(out_path), out_wav, sr)
 
+        # Trim reference to output duration for WER.
+        src_wav, src_sr = sf.read(wav, dtype="float32")
+        if src_wav.ndim > 1:
+            src_wav = src_wav[:, 0]
+        if int(src_sr) != sr:
+            raise ValueError(f"Expected {sr}Hz wav in playlist, got {src_sr}Hz: {wav}")
+        n = len(out_wav)
+        src_trim = np.asarray(src_wav).reshape(-1)[:n]
+        if len(src_trim) < n:
+            src_trim = np.pad(src_trim, (0, n - len(src_trim)), mode="constant")
+        ref_trim_path = out_dir / "ref_trim" / (Path(wav).stem + ".wav")
+        write_wav(str(ref_trim_path), src_trim, sr)
+
         wers.append(
             compute_wer_whisper(
                 whisper_model,
-                audio_ref_path=wav,
+                audio_ref_path=str(ref_trim_path),
                 audio_deg_path=str(out_path),
             )
         )
