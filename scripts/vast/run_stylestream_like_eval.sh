@@ -19,6 +19,8 @@ source "${VENV_DIR:-.venv}/bin/activate"
 : "${OUT_DIR:=runs/stylestream_like}"
 : "${NUM_SOURCES:=100}"
 : "${PAIRS_PER_SOURCE:=10}"
+: "${PRESET:=default}"
+: "${PAIRING:=sample}"
 : "${KIND:=vevotimbre}"
 : "${FLOW_STEPS:=16}"
 : "${WHISPER_MODEL:=large-v3}"
@@ -29,6 +31,8 @@ source "${VENV_DIR:-.venv}/bin/activate"
 python -m evaluation.stylestream_like.build_manifest \
   --out_dir "$OUT_DIR" \
   --num_sources "$NUM_SOURCES" \
+  --preset "$PRESET" \
+  --pairing "$PAIRING" \
   --pairs_per_source "$PAIRS_PER_SOURCE"
 
 ARGS=()

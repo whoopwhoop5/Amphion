@@ -19,6 +19,8 @@ source "${VENV_DIR:-.venv}/bin/activate"
 : "${OUT_DIR:=runs/stylestream_like_search}"
 : "${NUM_SOURCES:=20}"
 : "${PAIRS_PER_SOURCE:=5}"
+: "${PRESET:=default}"
+: "${PAIRING:=sample}"
 : "${KIND:=vevotimbre}"
 
 : "${MAX_PAIRS:=50}"
@@ -37,6 +39,8 @@ source "${VENV_DIR:-.venv}/bin/activate"
 python -m evaluation.stylestream_like.build_manifest \
   --out_dir "$OUT_DIR" \
   --num_sources "$NUM_SOURCES" \
+  --preset "$PRESET" \
+  --pairing "$PAIRING" \
   --pairs_per_source "$PAIRS_PER_SOURCE"
 
 ARGS=()
@@ -56,4 +60,3 @@ python -m evaluation.stylestream_like.search \
   --diffusion_cfg_grid "$DIFFUSION_CFG_GRID" \
   --diffusion_rescale_grid "$DIFFUSION_RESCALE_GRID" \
   "${ARGS[@]}"
-
