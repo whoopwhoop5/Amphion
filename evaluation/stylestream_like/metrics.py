@@ -5,11 +5,22 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import math
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
 import numpy as np
+
+
+@contextlib.contextmanager
+def _suppress_third_party_output() -> Any:
+    """Best-effort suppression for noisy third-party libs (whisper/modelscope/funasr)."""
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+        yield
 
 
 def normalize_text_for_wer(text: str) -> str:
@@ -74,7 +85,8 @@ class WhisperTranscriber:
             self._model = self._model.to(device)
 
     def transcribe(self, audio_path: str) -> tuple[str, Optional[str]]:
-        out = self._model.transcribe(audio_path, verbose=False)
+        with _suppress_third_party_output():
+            out = self._model.transcribe(audio_path, verbose=False)
         return str(out.get("text", "")), out.get("language")
 
 
@@ -157,11 +169,12 @@ class Emotion2VecEmbedder:
         self._pipeline = pipeline(task=Tasks.emotion_recognition, model=model_id, device=device)
 
     def embed(self, wav_path: str) -> np.ndarray:
-        out: Any = self._pipeline(
-            wav_path,
-            granularity="utterance",
-            extract_embedding=True,
-        )
+        with _suppress_third_party_output():
+            out: Any = self._pipeline(
+                wav_path,
+                granularity="utterance",
+                extract_embedding=True,
+            )
 
         # ModelScope/FunASR commonly returns a list of dicts (one per utterance). Normalize to a dict.
         if isinstance(out, list):
