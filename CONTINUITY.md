@@ -6,7 +6,7 @@
   - Default model SR: 24kHz; client defaults to 48kHz I/O and resamples to/from 24kHz.
   - Determinism: diffusion noise uses explicit generator; AR sampling uses forked RNG seeding for Transformers compatibility.
   - GPU host env: `scripts/vast/setup_vevo_venv.sh` installs CUDA torch (cu121) and pins `transformers==4.41.2`.
-- Done:
+  - Done:
   - Added offline CLI (`python -m models.vc.vevo.convert`) supporting `vevotimbre` and `vevovoice`.
   - Added live buffered pipeline (server/client) with length normalization and RMS loudness normalization.
   - Added deterministic autotune + regression scripts (`evaluation/vevo_live/*`).
@@ -20,6 +20,7 @@
     - Default device selection now prefers `mps` when CUDA is unavailable.
     - Bench results (vevotimbre): win=1000/hop=500/steps=8 mean≈0.52s (RTF≈1.04, borderline), steps=6 mean≈0.40s (RTF≈0.79, realtime); win=600/hop=600/steps=8 mean≈0.50s (RTF≈0.83, realtime).
     - Bench results (vevovoice): win=1000/hop=1000/steps=8 mean≈2.59s (RTF≈2.59, not realtime on MPS).
+    - Added Mac live preset configs under `evaluation/vevo_live/best_configs/` for quick local runs.
 - Done (StyleStream-like eval):
   - Added `evaluation/stylestream_like/*` to reproduce StyleStream paper objective metrics (Whisper WER, Resemblyzer S-SIM, SpeechBrain accent A-SIM, emotion2vec E-SIM) on a deterministic benchmark.
   - Updated `stylestream_test` preset to use LibriTTS test-clean sources (`mythicinfinity/libritts`) + GLOBE sources, with L2-ARCTIC accent targets + RAVDESS emotion targets; manifest now records `libritts_revision`.
