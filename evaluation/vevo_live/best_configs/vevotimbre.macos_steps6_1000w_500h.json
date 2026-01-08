@@ -1,0 +1,23 @@
+{
+  "inference": {
+    "kind": "vevotimbre",
+    "flow_matching_steps": 6,
+    "diffusion_cfg": 1.0,
+    "diffusion_rescale_cfg": 0.75,
+    "seed": 1234,
+    "ar_max_length": 2000,
+    "ar_temperature": 0.8,
+    "ar_top_k": 50,
+    "ar_top_p": 0.9,
+    "ar_repeat_penalty": 1.0,
+    "ar_min_new_tokens": 50,
+    "prepend_style_ref_to_input": true
+  },
+  "streaming": {
+    "window_ms": 1000,
+    "hop_ms": 500,
+    "fade_ms": 10,
+    "normalize_align": "end"
+  }
+}
+
