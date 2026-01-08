@@ -42,6 +42,16 @@ def _normalize_len_end(x: np.ndarray, n: int) -> np.ndarray:
     return np.pad(x, (n - len(x), 0), mode="constant")
 
 
+def _apply_peak_limiter(x: np.ndarray, peak_limit: float) -> np.ndarray:
+    x = np.asarray(x, dtype=np.float32).reshape(-1)
+    if float(peak_limit) <= 0:
+        return x
+    peak = float(np.max(np.abs(x))) if len(x) else 0.0
+    if not np.isfinite(peak) or peak <= float(peak_limit) or peak <= 1e-9:
+        return x
+    return (x * (float(peak_limit) / peak)).astype(np.float32, copy=False)
+
+
 class OutputRingBuffer:
     def __init__(self, capacity: int):
         self._buf = np.zeros(capacity, dtype=np.float32)
@@ -132,6 +142,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--window_ms", type=int, default=2000)
     parser.add_argument("--hop_ms", type=int, default=1000)
     parser.add_argument("--fade_ms", type=int, default=10)
+    parser.add_argument("--vad_db", type=float, default=-55.0)
+    parser.add_argument("--vad_frame_ms", type=float, default=10.0)
+    parser.add_argument("--peak_limit", type=float, default=0.99)
     parser.add_argument("--normalize_align", type=str, default="end", choices=["start", "end"])
     parser.add_argument("--flow_matching_steps", type=int, default=8)
     parser.add_argument("--seed", type=int, default=1234)
@@ -166,6 +179,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         args.window_ms = int(stream.get("window_ms", args.window_ms))
         args.hop_ms = int(stream.get("hop_ms", args.hop_ms))
         args.fade_ms = int(stream.get("fade_ms", args.fade_ms))
+        args.vad_db = float(stream.get("vad_db", args.vad_db))
+        args.vad_frame_ms = float(stream.get("vad_frame_ms", args.vad_frame_ms))
+        args.peak_limit = float(stream.get("peak_limit", args.peak_limit))
         args.normalize_align = str(stream.get("normalize_align", args.normalize_align))
 
         args.flow_matching_steps = int(inf.get("flow_matching_steps", args.flow_matching_steps))
@@ -248,6 +264,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             "window_samples": window_samples_model,
             "hop_samples": hop_samples_model,
             "fade_samples": fade_samples_model,
+            "vad_db": args.vad_db,
+            "vad_frame_ms": args.vad_frame_ms,
+            "peak_limit": args.peak_limit,
             "flow_matching_steps": args.flow_matching_steps,
             "diffusion_cfg": args.diffusion_cfg,
             "diffusion_rescale_cfg": args.diffusion_rescale_cfg,
@@ -293,6 +312,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                     out_model = np.frombuffer(out_bytes, dtype=np.float32)
                     out_model = _normalize_len_end(out_model, hop_samples_model)
                     out_io = _resample(out_model, model_sr, io_sr)
+                    out_io = _apply_peak_limiter(out_io, float(args.peak_limit))
 
                     out_buf.write(out_io)
                     stats["sent"] += 1

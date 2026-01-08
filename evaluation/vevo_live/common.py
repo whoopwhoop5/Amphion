@@ -49,6 +49,9 @@ class VevoStreamingConfig:
     window_ms: int = 2000
     hop_ms: int = 1000
     fade_ms: int = 10
+    vad_db: float = -55.0
+    vad_frame_ms: float = 10.0
+    peak_limit: float = 0.99
     normalize_align: Literal["start", "end"] = "end"
 
 
@@ -325,6 +328,103 @@ def glitch_metrics(
     }
 
 
+def artifact_metrics_aligned(
+    src_aligned: np.ndarray,
+    deg_aligned: np.ndarray,
+    *,
+    sample_rate: int,
+    frame_ms: float = 10.0,
+    silence_floor_db: float = -120.0,
+    eps: float = 1e-9,
+) -> dict[str, float]:
+    """Metrics to detect streaming artifacts (noise leakage, dropouts, pumping).
+
+    Expects `src_aligned` and `deg_aligned` to be time-aligned and roughly equal length.
+    """
+
+    src = np.asarray(src_aligned, dtype=np.float32).reshape(-1)
+    deg = np.asarray(deg_aligned, dtype=np.float32).reshape(-1)
+    n = int(min(len(src), len(deg)))
+    if n <= 0 or sample_rate <= 0:
+        return {
+            "silence_in_db": float("nan"),
+            "voiced_in_db": float("nan"),
+            "silent_out_db_mean": float("nan"),
+            "silent_out_db_p95": float("nan"),
+            "dropout_frac_voiced": float("nan"),
+            "delta_db_std_voiced": float("nan"),
+            "delta_db_step_p95": float("nan"),
+            "clip_frac": 0.0,
+        }
+
+    src = src[:n]
+    deg = deg[:n]
+
+    frame = int(round(float(frame_ms) / 1000.0 * float(sample_rate)))
+    frame = max(1, frame)
+    nf = n // frame
+    if nf <= 0:
+        return {
+            "silence_in_db": float("nan"),
+            "voiced_in_db": float("nan"),
+            "silent_out_db_mean": float("nan"),
+            "silent_out_db_p95": float("nan"),
+            "dropout_frac_voiced": float("nan"),
+            "delta_db_std_voiced": float("nan"),
+            "delta_db_step_p95": float("nan"),
+            "clip_frac": float(np.mean(np.abs(deg) >= 0.999)),
+        }
+
+    src_f = src[: nf * frame].reshape(nf, frame)
+    deg_f = deg[: nf * frame].reshape(nf, frame)
+
+    src_rms = np.sqrt(np.mean(src_f * src_f, axis=1) + eps)
+    deg_rms = np.sqrt(np.mean(deg_f * deg_f, axis=1) + eps)
+
+    src_db = 20.0 * np.log10(src_rms + eps)
+    deg_db = 20.0 * np.log10(deg_rms + eps)
+    src_db = np.maximum(src_db, float(silence_floor_db))
+    deg_db = np.maximum(deg_db, float(silence_floor_db))
+
+    in_p95 = float(np.percentile(src_db, 95))
+    # Thresholds adapt to recording level but stay in sane dBFS ranges.
+    silence_in_db = float(min(-50.0, in_p95 - 30.0))
+    voiced_in_db = float(max(-45.0, in_p95 - 10.0))
+    if not np.isfinite(silence_in_db) or not np.isfinite(voiced_in_db):
+        silence_in_db = -60.0
+        voiced_in_db = -40.0
+
+    silent = src_db < silence_in_db
+    voiced = src_db > voiced_in_db
+
+    silent_out_db_mean = float(np.mean(deg_db[silent])) if np.any(silent) else float("nan")
+    silent_out_db_p95 = (
+        float(np.percentile(deg_db[silent], 95)) if np.any(silent) else float("nan")
+    )
+
+    # Dropouts: output far quieter than input on voiced frames.
+    dropout = (deg_db < (src_db - 25.0)) & voiced
+    dropout_frac_voiced = float(np.mean(dropout)) if np.any(voiced) else float("nan")
+
+    delta_db = deg_db - src_db
+    delta_db_std_voiced = float(np.std(delta_db[voiced])) if np.any(voiced) else float("nan")
+    delta_db_step_p95 = (
+        float(np.percentile(np.abs(np.diff(delta_db)), 95)) if len(delta_db) > 1 else 0.0
+    )
+
+    clip_frac = float(np.mean(np.abs(deg) >= 0.999))
+    return {
+        "silence_in_db": float(silence_in_db),
+        "voiced_in_db": float(voiced_in_db),
+        "silent_out_db_mean": float(silent_out_db_mean),
+        "silent_out_db_p95": float(silent_out_db_p95),
+        "dropout_frac_voiced": float(dropout_frac_voiced),
+        "delta_db_std_voiced": float(delta_db_std_voiced),
+        "delta_db_step_p95": float(delta_db_step_p95),
+        "clip_frac": float(clip_frac),
+    }
+
+
 @torch.no_grad()
 def simulate_streaming(
     converter: "VevoConverter",
@@ -343,6 +443,8 @@ def simulate_streaming(
     from models.vc.vevo.live_engine import (
         AudioRingBuffer,
         VevoStreamingEngine,
+        apply_peak_limiter,
+        is_silent_rms_db,
         normalize_length,
         smooth_boundary_inplace,
     )
@@ -387,26 +489,37 @@ def simulate_streaming(
             continue
 
         window = ring.read_last(window_samples)
-        t0 = time.time()
-        out_window = engine.convert_window(
-            window,
-            flow_matching_steps=cfg.inference.flow_matching_steps,
-            diffusion_cfg=cfg.inference.diffusion_cfg,
-            diffusion_rescale_cfg=cfg.inference.diffusion_rescale_cfg,
-            seed=cfg.inference.seed + window_count,
-            ar_max_length=cfg.inference.ar_max_length,
-            ar_temperature=cfg.inference.ar_temperature,
-            ar_top_k=cfg.inference.ar_top_k,
-            ar_top_p=cfg.inference.ar_top_p,
-            ar_repeat_penalty=cfg.inference.ar_repeat_penalty,
-            ar_min_new_tokens=cfg.inference.ar_min_new_tokens,
-            prepend_style_ref_to_input=cfg.inference.prepend_style_ref_to_input,
+
+        silent = float(cfg.streaming.vad_db) > -200.0 and is_silent_rms_db(
+            chunk,
+            sample_rate=engine.model_sr,
+            frame_ms=float(cfg.streaming.vad_frame_ms),
+            silence_db=float(cfg.streaming.vad_db),
         )
-        timings.append(time.time() - t0)
+        if silent:
+            out_window = np.zeros(window_samples, dtype=np.float32)
+        else:
+            t0 = time.time()
+            out_window = engine.convert_window(
+                window,
+                flow_matching_steps=cfg.inference.flow_matching_steps,
+                diffusion_cfg=cfg.inference.diffusion_cfg,
+                diffusion_rescale_cfg=cfg.inference.diffusion_rescale_cfg,
+                seed=cfg.inference.seed + window_count,
+                ar_max_length=cfg.inference.ar_max_length,
+                ar_temperature=cfg.inference.ar_temperature,
+                ar_top_k=cfg.inference.ar_top_k,
+                ar_top_p=cfg.inference.ar_top_p,
+                ar_repeat_penalty=cfg.inference.ar_repeat_penalty,
+                ar_min_new_tokens=cfg.inference.ar_min_new_tokens,
+                prepend_style_ref_to_input=cfg.inference.prepend_style_ref_to_input,
+            )
+            timings.append(time.time() - t0)
 
         out_window = normalize_length(out_window, window_samples, align=cfg.streaming.normalize_align)
         hop = out_window[-hop_samples:].astype(np.float32, copy=False)
         hop = smooth_boundary_inplace(hop, prev_last, fade_samples)
+        hop = apply_peak_limiter(hop, peak_limit=float(cfg.streaming.peak_limit))
         prev_last = float(hop[-1]) if len(hop) else prev_last
 
         outs.append(hop)

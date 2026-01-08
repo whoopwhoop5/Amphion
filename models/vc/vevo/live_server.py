@@ -18,6 +18,8 @@ import torch
 
 from models.vc.vevo.live_engine import (
     AudioRingBuffer,
+    apply_peak_limiter,
+    is_silent_rms_db,
     normalize_length,
     smooth_boundary_inplace,
 )
@@ -32,6 +34,9 @@ class SessionConfig:
     window_samples: int
     hop_samples: int
     fade_samples: int
+    vad_db: float
+    vad_frame_ms: float
+    peak_limit: float
     flow_matching_steps: int
     diffusion_cfg: float
     diffusion_rescale_cfg: float
@@ -63,6 +68,9 @@ def _parse_init(msg: dict[str, Any]) -> tuple[SessionConfig, bytes]:
         window_samples=int(msg.get("window_samples", 24000)),
         hop_samples=int(msg.get("hop_samples", 24000)),
         fade_samples=int(msg.get("fade_samples", 480)),
+        vad_db=float(msg.get("vad_db", -55.0)),
+        vad_frame_ms=float(msg.get("vad_frame_ms", 10.0)),
+        peak_limit=float(msg.get("peak_limit", 0.99)),
         flow_matching_steps=int(msg.get("flow_matching_steps", 16)),
         diffusion_cfg=float(msg.get("diffusion_cfg", 1.0)),
         diffusion_rescale_cfg=float(msg.get("diffusion_rescale_cfg", 0.75)),
@@ -149,24 +157,34 @@ async def _serve_client(websocket, repo_cache_dir: str, device: Optional[str]) -
 
         window = ring.read_last(cfg.window_samples)
 
-        out_window = engine.convert_window(
-            window,
-            flow_matching_steps=cfg.flow_matching_steps,
-            diffusion_cfg=cfg.diffusion_cfg,
-            diffusion_rescale_cfg=cfg.diffusion_rescale_cfg,
-            seed=None if cfg.seed is None else cfg.seed + window_count,
-            ar_max_length=cfg.ar_max_length,
-            ar_temperature=cfg.ar_temperature,
-            ar_top_k=cfg.ar_top_k,
-            ar_top_p=cfg.ar_top_p,
-            ar_repeat_penalty=cfg.ar_repeat_penalty,
-            ar_min_new_tokens=cfg.ar_min_new_tokens,
-            prepend_style_ref_to_input=cfg.prepend_style_ref_to_input,
+        silent = float(cfg.vad_db) > -200.0 and is_silent_rms_db(
+            chunk,
+            sample_rate=engine.model_sr,
+            frame_ms=float(cfg.vad_frame_ms),
+            silence_db=float(cfg.vad_db),
         )
+        if silent:
+            out_window = np.zeros(cfg.window_samples, dtype=np.float32)
+        else:
+            out_window = engine.convert_window(
+                window,
+                flow_matching_steps=cfg.flow_matching_steps,
+                diffusion_cfg=cfg.diffusion_cfg,
+                diffusion_rescale_cfg=cfg.diffusion_rescale_cfg,
+                seed=None if cfg.seed is None else cfg.seed + window_count,
+                ar_max_length=cfg.ar_max_length,
+                ar_temperature=cfg.ar_temperature,
+                ar_top_k=cfg.ar_top_k,
+                ar_top_p=cfg.ar_top_p,
+                ar_repeat_penalty=cfg.ar_repeat_penalty,
+                ar_min_new_tokens=cfg.ar_min_new_tokens,
+                prepend_style_ref_to_input=cfg.prepend_style_ref_to_input,
+            )
 
         out_window = normalize_length(out_window, cfg.window_samples, align=cfg.normalize_align)  # type: ignore[arg-type]
         hop = out_window[-cfg.hop_samples :].astype(np.float32, copy=False)
         hop = smooth_boundary_inplace(hop, prev_last, cfg.fade_samples)
+        hop = apply_peak_limiter(hop, peak_limit=float(cfg.peak_limit))
         prev_last = float(hop[-1]) if len(hop) else prev_last
 
         await websocket.send(hop.tobytes())

@@ -106,6 +106,68 @@ def normalize_rms_db(
     return (wav * gain).astype(np.float32, copy=False)
 
 
+def rms_db(
+    wav: np.ndarray,
+    *,
+    eps: float = 1e-9,
+) -> float:
+    wav = np.asarray(wav, dtype=np.float32).reshape(-1)
+    if len(wav) == 0:
+        return float("-inf")
+    rms = float(np.sqrt(np.mean(wav * wav) + eps))
+    return 20.0 * float(np.log10(rms + eps))
+
+
+def is_silent_rms_db(
+    wav: np.ndarray,
+    *,
+    sample_rate: int,
+    frame_ms: float = 10.0,
+    silence_db: float = -60.0,
+    percentile: float = 95.0,
+    eps: float = 1e-9,
+) -> bool:
+    """Heuristic VAD using frame RMS (in dBFS).
+
+    Returns True when the chosen percentile of frame RMS is below `silence_db`,
+    meaning the segment is mostly silent (robust to a few spikes).
+    """
+
+    wav = np.asarray(wav, dtype=np.float32).reshape(-1)
+    if len(wav) == 0:
+        return True
+
+    if sample_rate <= 0:
+        raise ValueError("sample_rate must be > 0")
+    frame = int(round(float(frame_ms) / 1000.0 * float(sample_rate)))
+    frame = max(1, frame)
+
+    n = len(wav) // frame
+    if n <= 0:
+        return rms_db(wav, eps=eps) < float(silence_db)
+
+    frames = wav[: n * frame].reshape(n, frame)
+    rms = np.sqrt(np.mean(frames * frames, axis=1) + eps)
+    db = 20.0 * np.log10(rms + eps)
+    return float(np.percentile(db, percentile)) < float(silence_db)
+
+
+def apply_peak_limiter(
+    wav: np.ndarray,
+    *,
+    peak_limit: float = 0.99,
+    eps: float = 1e-9,
+) -> np.ndarray:
+    wav = np.asarray(wav, dtype=np.float32).reshape(-1)
+    if peak_limit <= 0:
+        return wav
+    peak = float(np.max(np.abs(wav))) if len(wav) else 0.0
+    if not np.isfinite(peak) or peak <= peak_limit or peak <= eps:
+        return wav
+    gain = float(peak_limit) / peak
+    return (wav * gain).astype(np.float32, copy=False)
+
+
 class AudioRingBuffer:
     def __init__(self, capacity: int):
         if capacity <= 0:
@@ -230,7 +292,7 @@ class VevoStreamingEngine:
         diffusion_cfg: float = 1.0,
         diffusion_rescale_cfg: float = 0.75,
         seed: Optional[int] = None,
-        target_db: float = -25.0,
+        normalize_output_db: Optional[float] = None,
         clip: bool = True,
         # vevovoice knobs
         ar_max_length: int = 2000,
@@ -318,7 +380,8 @@ class VevoStreamingEngine:
 
         synthesized_audio = self.pipeline.vocoder_model(predict_mel_feat.transpose(1, 2)).detach()
         audio = synthesized_audio[0, 0].float().cpu().numpy()
-        audio = normalize_rms_db(audio, target_db=target_db)
+        if normalize_output_db is not None:
+            audio = normalize_rms_db(audio, target_db=float(normalize_output_db))
         if clip:
             audio = np.clip(audio, -1.0, 1.0).astype(np.float32, copy=False)
         return audio

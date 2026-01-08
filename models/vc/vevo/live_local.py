@@ -22,6 +22,8 @@ from scipy.signal import resample_poly
 from models.vc.vevo.live_engine import (
     AudioRingBuffer,
     VevoStreamingEngine,
+    apply_peak_limiter,
+    is_silent_rms_db,
     normalize_length,
     smooth_boundary_inplace,
 )
@@ -167,6 +169,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--window_ms", type=int, default=2000)
     parser.add_argument("--hop_ms", type=int, default=1000)
     parser.add_argument("--fade_ms", type=int, default=10)
+    parser.add_argument(
+        "--vad_db",
+        type=float,
+        default=-55.0,
+        help="If > -200, treat mostly-below-this RMS (dBFS) as silence and skip inference.",
+    )
+    parser.add_argument("--vad_frame_ms", type=float, default=10.0, help="VAD RMS frame size (ms).")
+    parser.add_argument(
+        "--peak_limit",
+        type=float,
+        default=0.99,
+        help="Peak limiter applied per output hop (<=0 disables).",
+    )
     parser.add_argument("--normalize_align", type=str, default="end", choices=["start", "end"])
     parser.add_argument("--flow_matching_steps", type=int, default=8)
     parser.add_argument("--seed", type=int, default=1234)
@@ -223,6 +238,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         args.window_ms = int(stream.get("window_ms", args.window_ms))
         args.hop_ms = int(stream.get("hop_ms", args.hop_ms))
         args.fade_ms = int(stream.get("fade_ms", args.fade_ms))
+        args.vad_db = float(stream.get("vad_db", args.vad_db))
+        args.vad_frame_ms = float(stream.get("vad_frame_ms", args.vad_frame_ms))
+        args.peak_limit = float(stream.get("peak_limit", args.peak_limit))
         args.normalize_align = str(stream.get("normalize_align", args.normalize_align))
 
         args.flow_matching_steps = int(inf.get("flow_matching_steps", args.flow_matching_steps))
@@ -319,30 +337,41 @@ def main(argv: Optional[list[str]] = None) -> int:
                     out_window = window
                 else:
                     assert engine is not None
-                    t0 = time.time()
-                    out_window = engine.convert_window(
-                        window,
-                        flow_matching_steps=args.flow_matching_steps,
-                        diffusion_cfg=args.diffusion_cfg,
-                        diffusion_rescale_cfg=args.diffusion_rescale_cfg,
-                        seed=args.seed + window_count,
-                        ar_max_length=args.ar_max_length,
-                        ar_temperature=args.ar_temperature,
-                        ar_top_k=args.ar_top_k,
-                        ar_top_p=args.ar_top_p,
-                        ar_repeat_penalty=args.ar_repeat_penalty,
-                        ar_min_new_tokens=args.ar_min_new_tokens,
-                        prepend_style_ref_to_input=not bool(args.no_prepend_style_ref_to_input),
+                    silent = float(args.vad_db) > -200.0 and is_silent_rms_db(
+                        hop_model,
+                        sample_rate=model_sr,
+                        frame_ms=float(args.vad_frame_ms),
+                        silence_db=float(args.vad_db),
                     )
-                    timings.append(time.time() - t0)
+                    if silent:
+                        out_window = np.zeros(window_samples_model, dtype=np.float32)
+                    else:
+                        t0 = time.time()
+                        out_window = engine.convert_window(
+                            window,
+                            flow_matching_steps=args.flow_matching_steps,
+                            diffusion_cfg=args.diffusion_cfg,
+                            diffusion_rescale_cfg=args.diffusion_rescale_cfg,
+                            seed=args.seed + window_count,
+                            ar_max_length=args.ar_max_length,
+                            ar_temperature=args.ar_temperature,
+                            ar_top_k=args.ar_top_k,
+                            ar_top_p=args.ar_top_p,
+                            ar_repeat_penalty=args.ar_repeat_penalty,
+                            ar_min_new_tokens=args.ar_min_new_tokens,
+                            prepend_style_ref_to_input=not bool(args.no_prepend_style_ref_to_input),
+                        )
+                        timings.append(time.time() - t0)
 
                 out_window = normalize_length(out_window, window_samples_model, align=args.normalize_align)
                 out_hop = out_window[-hop_samples_model:].astype(np.float32, copy=False)
                 out_hop = smooth_boundary_inplace(out_hop, prev_last, fade_samples_model)
+                out_hop = apply_peak_limiter(out_hop, peak_limit=float(args.peak_limit))
                 prev_last = float(out_hop[-1]) if len(out_hop) else prev_last
 
                 out_io = _resample(out_hop, model_sr, io_sr)
                 out_io = _normalize_len_end(out_io, hop_samples_io)
+                out_io = apply_peak_limiter(out_io, peak_limit=float(args.peak_limit))
                 outputs.append(out_io)
                 window_count += 1
 
@@ -439,31 +468,42 @@ def main(argv: Optional[list[str]] = None) -> int:
                     out_window = window
                 else:
                     assert engine is not None
-                    t0 = time.time()
-                    out_window = engine.convert_window(
-                        window,
-                        flow_matching_steps=args.flow_matching_steps,
-                        diffusion_cfg=args.diffusion_cfg,
-                        diffusion_rescale_cfg=args.diffusion_rescale_cfg,
-                        seed=args.seed + window_count,
-                        ar_max_length=args.ar_max_length,
-                        ar_temperature=args.ar_temperature,
-                        ar_top_k=args.ar_top_k,
-                        ar_top_p=args.ar_top_p,
-                        ar_repeat_penalty=args.ar_repeat_penalty,
-                        ar_min_new_tokens=args.ar_min_new_tokens,
-                        prepend_style_ref_to_input=not bool(args.no_prepend_style_ref_to_input),
+                    silent = float(args.vad_db) > -200.0 and is_silent_rms_db(
+                        hop_model,
+                        sample_rate=model_sr,
+                        frame_ms=float(args.vad_frame_ms),
+                        silence_db=float(args.vad_db),
                     )
-                    timings.append(time.time() - t0)
-                    if len(timings) > 200:
-                        timings = timings[-200:]
+                    if silent:
+                        out_window = np.zeros(window_samples_model, dtype=np.float32)
+                    else:
+                        t0 = time.time()
+                        out_window = engine.convert_window(
+                            window,
+                            flow_matching_steps=args.flow_matching_steps,
+                            diffusion_cfg=args.diffusion_cfg,
+                            diffusion_rescale_cfg=args.diffusion_rescale_cfg,
+                            seed=args.seed + window_count,
+                            ar_max_length=args.ar_max_length,
+                            ar_temperature=args.ar_temperature,
+                            ar_top_k=args.ar_top_k,
+                            ar_top_p=args.ar_top_p,
+                            ar_repeat_penalty=args.ar_repeat_penalty,
+                            ar_min_new_tokens=args.ar_min_new_tokens,
+                            prepend_style_ref_to_input=not bool(args.no_prepend_style_ref_to_input),
+                        )
+                        timings.append(time.time() - t0)
+                        if len(timings) > 200:
+                            timings = timings[-200:]
 
                 out_window = normalize_length(out_window, window_samples_model, align=args.normalize_align)
                 out_hop = out_window[-hop_samples_model:].astype(np.float32, copy=False)
                 out_hop = smooth_boundary_inplace(out_hop, prev_last, fade_samples_model)
+                out_hop = apply_peak_limiter(out_hop, peak_limit=float(args.peak_limit))
                 prev_last = float(out_hop[-1]) if len(out_hop) else prev_last
 
                 out_io = _resample(out_hop, model_sr, io_sr)
+                out_io = apply_peak_limiter(out_io, peak_limit=float(args.peak_limit))
                 out_buf.write(out_io)
                 window_count += 1
 

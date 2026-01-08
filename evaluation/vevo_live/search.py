@@ -20,6 +20,7 @@ from evaluation.vevo_live.common import (
     SpeakerSimilarityScorer,
     VevoInferenceConfig,
     VevoStreamingConfig,
+    artifact_metrics_aligned,
     compute_content_similarity_hubert,
     compute_wer_whisper,
     glitch_metrics,
@@ -36,6 +37,9 @@ def score_result(metrics: dict[str, Any]) -> float:
     content = float(metrics.get("content_hubert_cos", 0.0))
     wer = float(metrics.get("wer", 1.0))
     click = float(metrics.get("glitch_boundary_jump_ratio_p95", 0.0))
+    silent_p95 = float(metrics.get("artifact_silent_out_db_p95", float("nan")))
+    dropout = float(metrics.get("artifact_dropout_frac_voiced", float("nan")))
+    clip_frac = float(metrics.get("artifact_clip_frac", 0.0))
     window_sec = float(metrics.get("mean_window_sec", 9e9))
     hop_sec = float(metrics.get("hop_sec", 9e9))
 
@@ -43,10 +47,26 @@ def score_result(metrics: dict[str, Any]) -> float:
         content = 0.0
     if not np.isfinite(wer):
         wer = 1.0
+    if not np.isfinite(silent_p95):
+        silent_p95 = -120.0
+    if not np.isfinite(dropout):
+        dropout = 1.0
 
     # Penalize instability + slow configs. Weights chosen to be conservative; adjust as needed.
     effective_latency = hop_sec + window_sec
-    return 0.60 * sim + 0.40 * content - 0.80 * wer - 0.02 * click - 0.05 * effective_latency
+
+    # Noise leakage penalty: values closer to 0dB are worse. Start penalizing above -50dB.
+    leak_pen = max(0.0, silent_p95 + 50.0)  # e.g., -30 -> 20 penalty; -60 -> 0
+    return (
+        0.60 * sim
+        + 0.40 * content
+        - 0.80 * wer
+        - 0.50 * dropout
+        - 0.25 * leak_pen
+        - 50.0 * clip_frac
+        - 0.02 * click
+        - 0.05 * effective_latency
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -128,6 +148,24 @@ def main(argv: list[str] | None = None) -> int:
         default=1.00,
         help="Reject configs with rtf_p95 above this (<=0 disables the gate).",
     )
+    parser.add_argument(
+        "--max_silent_out_db_p95",
+        type=float,
+        default=-35.0,
+        help="Reject configs whose output is too loud during input silence (dBFS; more negative is better).",
+    )
+    parser.add_argument(
+        "--max_dropout_frac_voiced",
+        type=float,
+        default=0.02,
+        help="Reject configs with too many voiced-frame dropouts.",
+    )
+    parser.add_argument(
+        "--max_clip_frac",
+        type=float,
+        default=0.001,
+        help="Reject configs with excessive clipping/saturation.",
+    )
     args = parser.parse_args(argv)
 
     def _parse_int_grid(s: str) -> list[int]:
@@ -203,6 +241,10 @@ def main(argv: list[str] | None = None) -> int:
                     wers = []
                     content_cos = []
                     clicks = []
+                    silent_out_p95s = []
+                    dropout_fracs = []
+                    delta_std_voiced = []
+                    clip_fracs = []
                     mean_window_secs = []
                     p95_window_secs = []
                     for wav in wavs:
@@ -260,6 +302,19 @@ def main(argv: list[str] | None = None) -> int:
                             hop_samples=int(round(cfg.streaming.hop_ms / 1000 * sr)),
                         )
                         clicks.append(gm["boundary_jump_ratio_p95"])
+
+                        am = artifact_metrics_aligned(
+                            np.asarray(src_trim, dtype=np.float32).reshape(-1),
+                            np.asarray(out_wav, dtype=np.float32).reshape(-1),
+                            sample_rate=sr,
+                        )
+                        if np.isfinite(am.get("silent_out_db_p95", float("nan"))):
+                            silent_out_p95s.append(float(am["silent_out_db_p95"]))
+                        if np.isfinite(am.get("dropout_frac_voiced", float("nan"))):
+                            dropout_fracs.append(float(am["dropout_frac_voiced"]))
+                        if np.isfinite(am.get("delta_db_std_voiced", float("nan"))):
+                            delta_std_voiced.append(float(am["delta_db_std_voiced"]))
+                        clip_fracs.append(float(am.get("clip_frac", 0.0)))
                         mean_window_secs.append(float(stream_stats.get("mean_window_sec", 0.0)))
                         p95_window_secs.append(float(stream_stats.get("p95_window_sec", 0.0)))
 
@@ -276,6 +331,16 @@ def main(argv: list[str] | None = None) -> int:
                                 "glitch_boundary_jump_ratio_p95": float(
                                     gm["boundary_jump_ratio_p95"]
                                 ),
+                                "artifact_silent_out_db_p95": float(am.get("silent_out_db_p95", float("nan"))),
+                                "artifact_silent_out_db_mean": float(am.get("silent_out_db_mean", float("nan"))),
+                                "artifact_dropout_frac_voiced": float(
+                                    am.get("dropout_frac_voiced", float("nan"))
+                                ),
+                                "artifact_delta_db_std_voiced": float(
+                                    am.get("delta_db_std_voiced", float("nan"))
+                                ),
+                                "artifact_delta_db_step_p95": float(am.get("delta_db_step_p95", float("nan"))),
+                                "artifact_clip_frac": float(am.get("clip_frac", 0.0)),
                                 **stream_stats,
                             }
                         )
@@ -298,6 +363,16 @@ def main(argv: list[str] | None = None) -> int:
                         "glitch_boundary_jump_ratio_p95": float(np.mean(clicks))
                         if clicks
                         else 0.0,
+                        "artifact_silent_out_db_p95": float(np.mean(silent_out_p95s))
+                        if silent_out_p95s
+                        else float("nan"),
+                        "artifact_dropout_frac_voiced": float(np.mean(dropout_fracs))
+                        if dropout_fracs
+                        else float("nan"),
+                        "artifact_delta_db_std_voiced": float(np.mean(delta_std_voiced))
+                        if delta_std_voiced
+                        else float("nan"),
+                        "artifact_clip_frac": float(np.mean(clip_fracs)) if clip_fracs else 0.0,
                         "mean_window_sec": float(np.mean(mean_window_secs))
                         if mean_window_secs
                         else 0.0,
@@ -334,6 +409,20 @@ def main(argv: list[str] | None = None) -> int:
                         args.max_rtf_p95
                     ):
                         gate_ok = False
+                    if (
+                        np.isfinite(metrics.get("artifact_silent_out_db_p95", float("nan")))
+                        and float(metrics["artifact_silent_out_db_p95"])
+                        > float(args.max_silent_out_db_p95)
+                    ):
+                        gate_ok = False
+                    if (
+                        np.isfinite(metrics.get("artifact_dropout_frac_voiced", float("nan")))
+                        and float(metrics["artifact_dropout_frac_voiced"])
+                        > float(args.max_dropout_frac_voiced)
+                    ):
+                        gate_ok = False
+                    if float(metrics.get("artifact_clip_frac", 0.0)) > float(args.max_clip_frac):
+                        gate_ok = False
                     metrics["gate_ok"] = bool(gate_ok)
 
                     metrics["score"] = score_result(metrics) if gate_ok else -1e9
@@ -363,7 +452,11 @@ def main(argv: list[str] | None = None) -> int:
 
                     print(
                         f"[search] cfg={cfg_uid} flow={flow_steps} win={window_ms} hop={hop_ms} fade={fade_ms} "
-                        f"sim={sim:.3f} hubert={metrics['content_hubert_cos']:.3f} wer={metrics['wer']:.3f} click={metrics['glitch_boundary_jump_ratio_p95']:.2f} "
+                        f"sim={sim:.3f} hubert={metrics['content_hubert_cos']:.3f} wer={metrics['wer']:.3f} "
+                        f"sil_p95={metrics.get('artifact_silent_out_db_p95', float('nan')):.1f} "
+                        f"drop={metrics.get('artifact_dropout_frac_voiced', float('nan')):.3f} "
+                        f"clip={metrics.get('artifact_clip_frac', 0.0):.4f} "
+                        f"click={metrics['glitch_boundary_jump_ratio_p95']:.2f} "
                         f"win_s={metrics['mean_window_sec']:.2f} rtf={metrics['rtf_mean']:.2f}/{metrics['rtf_p95']:.2f} "
                         f"gate={int(metrics['gate_ok'])} score={metrics['score']:.3f} best={best_score:.3f}",
                         flush=True,

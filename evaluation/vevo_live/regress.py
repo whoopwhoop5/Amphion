@@ -17,6 +17,7 @@ from evaluation.vevo_live.common import (
     SpeakerSimilarityScorer,
     VevoInferenceConfig,
     VevoStreamingConfig,
+    artifact_metrics_aligned,
     compute_content_similarity_hubert,
     compute_wer_whisper,
     glitch_metrics,
@@ -68,6 +69,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min_content_hubert", type=float, default=0.80)
     parser.add_argument("--max_wer", type=float, default=0.90)
     parser.add_argument("--max_click_p95", type=float, default=5.0)
+    parser.add_argument("--max_silent_out_db_p95", type=float, default=-35.0)
+    parser.add_argument("--max_dropout_frac_voiced", type=float, default=0.02)
+    parser.add_argument("--max_clip_frac", type=float, default=0.001)
     args = parser.parse_args(argv)
 
     cfg_raw = json.loads(Path(args.config_json).read_text())
@@ -106,6 +110,9 @@ def main(argv: list[str] | None = None) -> int:
     wers = []
     content_cos = []
     click_p95s = []
+    silent_out_p95s = []
+    dropout_fracs = []
+    clip_fracs = []
     for wav in wavs[: args.max_files]:
         hop_sec = max(float(cfg.streaming.hop_ms) / 1000.0, 1e-9)
         max_hops = max(1, int(round(float(args.eval_seconds) / hop_sec)))
@@ -156,6 +163,17 @@ def main(argv: list[str] | None = None) -> int:
         )
         click_p95s.append(gm["boundary_jump_ratio_p95"])
 
+        am = artifact_metrics_aligned(
+            np.asarray(src_trim, dtype=np.float32).reshape(-1),
+            np.asarray(out_wav, dtype=np.float32).reshape(-1),
+            sample_rate=sr,
+        )
+        if np.isfinite(am.get("silent_out_db_p95", float("nan"))):
+            silent_out_p95s.append(float(am["silent_out_db_p95"]))
+        if np.isfinite(am.get("dropout_frac_voiced", float("nan"))):
+            dropout_fracs.append(float(am["dropout_frac_voiced"]))
+        clip_fracs.append(float(am.get("clip_frac", 0.0)))
+
     sim = speaker_scorer.score_dir(str(deg_dir))
     wer = float(np.mean([w for w in wers if np.isfinite(w)])) if any(np.isfinite(w) for w in wers) else 1.0
     content = (
@@ -164,12 +182,18 @@ def main(argv: list[str] | None = None) -> int:
         else float("nan")
     )
     click_p95 = float(np.mean(click_p95s)) if click_p95s else 0.0
+    silent_out_db_p95 = float(np.mean(silent_out_p95s)) if silent_out_p95s else float("nan")
+    dropout_frac_voiced = float(np.mean(dropout_fracs)) if dropout_fracs else float("nan")
+    clip_frac = float(np.mean(clip_fracs)) if clip_fracs else 0.0
 
     report = {
         "similarity": sim,
         "content_hubert_cos": content,
         "wer": wer,
         "click_p95": click_p95,
+        "artifact_silent_out_db_p95": silent_out_db_p95,
+        "artifact_dropout_frac_voiced": dropout_frac_voiced,
+        "artifact_clip_frac": clip_frac,
         "config": cfg_raw,
     }
     (out_dir / "report.json").write_text(json.dumps(report, indent=2))
@@ -183,6 +207,12 @@ def main(argv: list[str] | None = None) -> int:
     if wer > args.max_wer:
         ok = False
     if click_p95 > args.max_click_p95:
+        ok = False
+    if np.isfinite(silent_out_db_p95) and silent_out_db_p95 > args.max_silent_out_db_p95:
+        ok = False
+    if np.isfinite(dropout_frac_voiced) and dropout_frac_voiced > args.max_dropout_frac_voiced:
+        ok = False
+    if clip_frac > args.max_clip_frac:
         ok = False
 
     return 0 if ok else 2
