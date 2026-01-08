@@ -181,6 +181,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--peak_limit", type=float, default=0.99)
     args = parser.parse_args(argv)
 
+    # Prevent FreeVC's `utils.py` from setting global DEBUG logging (which makes numba extremely noisy).
+    import logging
+
+    logging.basicConfig(stream=sys.stdout, level=logging.WARNING)
+    logging.getLogger("numba").setLevel(logging.WARNING)
+
     device = (
         torch.device(args.device)
         if args.device
@@ -233,6 +239,14 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # FreeVC uses WavLM at 16kHz for content + speaker encoder.
     content_sr = 16000
+    wavlm_hop = 320  # WavLM's conv feature extractor hop @16kHz (20ms).
+    upsample_rates = list(getattr(hps.model, "upsample_rates", []))
+    if not upsample_rates:
+        raise ValueError("Missing hps.model.upsample_rates; cannot infer output sample rate.")
+    prod_upsample = int(np.prod(np.asarray(upsample_rates, dtype=np.int64)))
+    out_sr = int(round(float(content_sr) / float(wavlm_hop) * float(prod_upsample)))
+    if out_sr <= 0:
+        raise ValueError(f"Invalid inferred output sample rate: {out_sr}")
 
     ref_wav, ref_sr = _load_mono(args.ref)
     src_wav, src_sr = _load_mono(args.src)
@@ -262,8 +276,6 @@ def main(argv: Optional[list[str]] = None) -> int:
         sf.write(args.out, out, out_sr)
     else:
         in_sr = content_sr
-        out_sr = int(getattr(hps.data, "sampling_rate", 16000))
-
         window_in = int(round(float(args.window_ms) / 1000.0 * float(in_sr)))
         hop_in = int(round(float(args.hop_ms) / 1000.0 * float(in_sr)))
         if window_in <= 0 or hop_in <= 0:
@@ -383,4 +395,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

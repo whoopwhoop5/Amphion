@@ -41,7 +41,7 @@ python -m pip install -U pip setuptools wheel
 python -m pip install -U --index-url https://download.pytorch.org/whl/cu121 torch torchaudio torchvision
 
 # Minimal deps for inference.
-python -m pip install -U numpy scipy soundfile librosa tqdm "transformers==4.41.2"
+python -m pip install -U numpy scipy soundfile librosa tqdm webrtcvad "transformers==4.41.2"
 
 if [[ ! -d "${FREEVC_DIR}" ]]; then
   echo "[freevc_setup] Cloning FreeVC to ${FREEVC_DIR}"
