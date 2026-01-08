@@ -10,7 +10,7 @@ ENV_NAME="freevc"
 
 cd "$(dirname "$0")/../.."
 
-RUN_DIR="runs/vc_quest/freevc/user_pair_search"
+RUN_DIR="${RUN_DIR:-runs/vc_quest/freevc/user_pair_search_webrtc_center}"
 mkdir -p "${RUN_DIR}"
 
 FREEVC_DIR="${HOME}/deps/FreeVC"
@@ -30,6 +30,12 @@ FADE_MS="${FADE_MS:-10}"
 
 VAD_DB="${VAD_DB:--55}"
 VAD_FRAME_MS="${VAD_FRAME_MS:-10}"
+VAD_MODE="${VAD_MODE:-webrtc}"
+VAD_HANGOVER_MS="${VAD_HANGOVER_MS:-200}"
+VAD_WEBRTC_AGGRESSIVENESS="${VAD_WEBRTC_AGGRESSIVENESS:-2}"
+VAD_WEBRTC_FRAME_MS="${VAD_WEBRTC_FRAME_MS:-30}"
+VAD_WEBRTC_MIN_VOICED_RATIO="${VAD_WEBRTC_MIN_VOICED_RATIO:-0.1}"
+EMIT_ALIGN="${EMIT_ALIGN:-center}"
 PEAK_LIMIT="${PEAK_LIMIT:-0.99}"
 
 source "${CONDA_SH}"
@@ -37,6 +43,7 @@ conda activate "${ENV_NAME}"
 
 echo "[freevc_search] freevc_dir=${FREEVC_DIR} variant=${VARIANT}"
 echo "[freevc_search] grid windows_ms=[${WINDOWS_MS}] hops_ms=[${HOPS_MS}]"
+echo "[freevc_search] vad_mode=${VAD_MODE} emit_align=${EMIT_ALIGN}"
 
 # Offline once (used as a quality reference for listening).
 python -m evaluation.vc_quest.freevc_convert \
@@ -81,8 +88,14 @@ for window_ms in ${WINDOWS_MS}; do
       --window_ms "${window_ms}" \
       --hop_ms "${hop_ms}" \
       --fade_ms "${FADE_MS}" \
+      --emit_align "${EMIT_ALIGN}" \
+      --vad_mode "${VAD_MODE}" \
       --vad_db "${VAD_DB}" \
       --vad_frame_ms "${VAD_FRAME_MS}" \
+      --vad_hangover_ms "${VAD_HANGOVER_MS}" \
+      --vad_webrtc_aggressiveness "${VAD_WEBRTC_AGGRESSIVENESS}" \
+      --vad_webrtc_frame_ms "${VAD_WEBRTC_FRAME_MS}" \
+      --vad_webrtc_min_voiced_ratio "${VAD_WEBRTC_MIN_VOICED_RATIO}" \
       --peak_limit "${PEAK_LIMIT}"
 
     python -m evaluation.vc_quest.freevc_convert \
@@ -98,8 +111,14 @@ for window_ms in ${WINDOWS_MS}; do
       --window_ms "${window_ms}" \
       --hop_ms "${hop_ms}" \
       --fade_ms "${FADE_MS}" \
+      --emit_align "${EMIT_ALIGN}" \
+      --vad_mode "${VAD_MODE}" \
       --vad_db "${VAD_DB}" \
       --vad_frame_ms "${VAD_FRAME_MS}" \
+      --vad_hangover_ms "${VAD_HANGOVER_MS}" \
+      --vad_webrtc_aggressiveness "${VAD_WEBRTC_AGGRESSIVENESS}" \
+      --vad_webrtc_frame_ms "${VAD_WEBRTC_FRAME_MS}" \
+      --vad_webrtc_min_voiced_ratio "${VAD_WEBRTC_MIN_VOICED_RATIO}" \
       --peak_limit "${PEAK_LIMIT}"
   done
 done
@@ -148,4 +167,3 @@ done
 python -m evaluation.vc_quest.select_best --run_dir "${RUN_DIR}"
 
 echo "[freevc_search] Done. Artifacts in ${RUN_DIR}"
-
