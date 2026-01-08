@@ -35,8 +35,25 @@ Key constraints:
 
 ### 2) FreeVC
 - Bead: `Amphion-ehh.2`
-- Status: open
+- Status: in_progress
 - Hypothesis: strong zero-shot VC baseline; may stream with overlap-add.
+- Implementation: `evaluation/vc_quest/freevc_convert.py` + `scripts/vc_quest/freevc_*`
+- Setup notes:
+  - Uses FreeVC repo under `~/deps/FreeVC` on GPU host (cloned by setup script).
+  - Downloads pretrained checkpoints from HF Space `OlaWod/FreeVC`.
+  - Uses HF `microsoft/wavlm-large` for content (note: authors mention HF ckpt differs slightly vs their training ckpt).
+  - Output sample-rate is inferred from `upsample_rates` product (FreeVC-24 outputs 24kHz).
+- Results (RTX 4090, variant=freevc-24, window=600ms, hop=600ms, fade=10ms):
+  - Speed: ~77ms per 600ms window (mean), so real-time budget is comfortable.
+  - Quality (Whisper `base` WER on our French sample pair is still high; stream can be worse than offline):
+    - `v5_to_fr_offline`: S-SIM≈0.952, WER≈0.659
+    - `fr_to_v5_offline`: S-SIM≈0.880, WER≈0.847
+    - `v5_to_fr_stream`:  S-SIM≈0.938, WER≈0.945  (significant degradation)
+    - `fr_to_v5_stream`:  S-SIM≈0.887, WER≈0.648
+  - Artifacts: noticeable silence leakage/noise on some runs (e.g., silent_out_db_p95 ≈ -30dB on v5_to_fr).
+- Next:
+  - Run a small deterministic grid over `(window_ms, hop_ms)` with overlap (`hop_ms < window_ms`) to see if streaming can match offline quality at <=600–1000ms context.
+  - Compare variants (`freevc`, `freevc-s`, `freevc-24`) and tighter reference trimming/VAD thresholds to reduce silence noise.
 
 ## What we record for each candidate
 - **Streaming config:** sample rate, chunk/window, hop, crossfade/OLA, VAD settings, any lookahead.
