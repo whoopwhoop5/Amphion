@@ -6,6 +6,7 @@
   - Default model SR: 24kHz; client defaults to 48kHz I/O and resamples to/from 24kHz.
   - Determinism: diffusion noise uses explicit generator; AR sampling uses forked RNG seeding for Transformers compatibility.
   - GPU host env: `scripts/vast/setup_vevo_venv.sh` installs CUDA torch (cu121) and pins `transformers==4.41.2`.
+  - Live audio stability: removed per-window RMS normalization; use simple RMS-based VAD gating + peak limiting at the wrapper level to suppress silence noise and avoid clipping.
 - Done:
   - Added offline CLI (`python -m models.vc.vevo.convert`) supporting `vevotimbre` and `vevovoice`.
   - Added live buffered pipeline (server/client) with length normalization and RMS loudness normalization.
@@ -47,6 +48,10 @@
   - Stronger macOS tuning workflow:
     - Added deterministic playlist builder (`evaluation/vevo_live/build_playlist.py`) and two-stage macOS tuner (`evaluation/vevo_live/tune_macos.py`).
     - Fixed `evaluation/vevo_live/search.py` fade-grid evaluation bug and improved regression CLI controls (`--max_files`, `--similarity_device`).
+- Done (2026-01-08):
+  - Fixed live “noise / cutouts” root cause: `VevoStreamingEngine.convert_window()` no longer normalizes RMS per window (prevents gain pumping and silence noise amplification).
+  - Added wrapper-level VAD gating + peak limiting to `live_local`, `live_server`, `live_client`, and `simulate_streaming` (defaults: `vad_db=-55`, `vad_frame_ms=10`, `peak_limit=0.99`).
+  - Strengthened evaluation: added aligned artifact metrics (silence leakage, voiced dropouts, clipping) and new gates in `evaluation/vevo_live/{search,regress}.py`.
 - Now: Use these baselines for repeatable comparisons vs the StyleStream paper, and iterate on live stability/latency without audible clicks.
 - Next:
   - GPU (RTX 4090) live tuning: try smaller hops (e.g., 250–500ms) with win>=1500ms to approach ~1s buffered latency while keeping intelligibility.
