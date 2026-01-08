@@ -145,6 +145,26 @@ python -m models.vc.vevo.live_client \
   --config_json evaluation/vevo_live/best_configs/vevotimbre.json
 ```
 
+## Live Buffered Conversion (Single-Process / Local Inference)
+
+If you want to avoid network/server RTT (run fully on the local machine), use the single-process runner:
+
+```bash
+python -m models.vc.vevo.live_local \
+  --ref assets/vevo_live/target_ref.wav \
+  --kind vevotimbre \
+  --window_ms 1000 --hop_ms 500 --fade_ms 10 \
+  --flow_matching_steps 6
+```
+
+Or load a saved config (recommended for macOS MPS):
+
+```bash
+python -m models.vc.vevo.live_local \
+  --ref assets/vevo_live/target_ref.wav \
+  --config_json evaluation/vevo_live/best_configs/vevotimbre.macos_steps8_600w_600h.json
+```
+
 To select audio devices:
 
 ```bash

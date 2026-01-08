@@ -21,7 +21,7 @@
     - Bench results (vevotimbre): win=1000/hop=500/steps=8 mean≈0.52s (RTF≈1.04, borderline), steps=6 mean≈0.40s (RTF≈0.79, realtime); win=600/hop=600/steps=8 mean≈0.50s (RTF≈0.83, realtime).
     - Bench results (vevovoice): win=1000/hop=1000/steps=8 mean≈2.59s (RTF≈2.59, not realtime on MPS).
     - Added Mac live preset configs under `evaluation/vevo_live/best_configs/` for quick local runs.
-- Done (StyleStream-like eval):
+  - Done (StyleStream-like eval):
   - Added `evaluation/stylestream_like/*` to reproduce StyleStream paper objective metrics (Whisper WER, Resemblyzer S-SIM, SpeechBrain accent A-SIM, emotion2vec E-SIM) on a deterministic benchmark.
   - Updated `stylestream_test` preset to use LibriTTS test-clean sources (`mythicinfinity/libritts`) + GLOBE sources, with L2-ARCTIC accent targets + RAVDESS emotion targets; manifest now records `libritts_revision`.
   - Silenced noisy third-party logging in StyleStream-like metrics (Whisper + emotion2vec pipeline).
@@ -29,6 +29,7 @@
     - `vevotimbre` (steps=32,cfg=1.2,rescale=0.75): WER≈0.0650, S-SIM≈0.7761
     - `vevovoice` (steps=16,cfg=1.2,rescale=0.75): WER≈0.1364, S-SIM≈0.7967, A-SIM≈0.5154, E-SIM≈0.9577
   - Live polish: replaced tail-mix “crossfade” with boundary smoothing (`smooth_boundary_inplace`) and updated live baseline config (`evaluation/vevo_live/best_configs/vevotimbre.json`, fade=10ms).
+  - Added single-process local live runner (`models/vc/vevo/live_local.py`) for macOS/desktop usage (no websocket RTT) and documented it in `models/vc/vevo/README.md`.
 - Now: Use these baselines for repeatable comparisons vs the StyleStream paper, and iterate on live stability/latency without audible clicks.
 - Next:
   - Fix E-SIM comparability: emotion2vec “feats” cosine is highly saturated on our target set (cos≈0.98–0.99 even across different emotions), so raw E-SIM is not directly comparable to the paper’s reported values.
