@@ -6,7 +6,7 @@
   - Default model SR: 24kHz; client defaults to 48kHz I/O and resamples to/from 24kHz.
   - Determinism: diffusion noise uses explicit generator; AR sampling uses forked RNG seeding for Transformers compatibility.
   - GPU host env: `scripts/vast/setup_vevo_venv.sh` installs CUDA torch (cu121) and pins `transformers==4.41.2`.
-  - Done:
+- Done:
   - Added offline CLI (`python -m models.vc.vevo.convert`) supporting `vevotimbre` and `vevovoice`.
   - Added live buffered pipeline (server/client) with length normalization and RMS loudness normalization.
   - Added deterministic autotune + regression scripts (`evaluation/vevo_live/*`).
@@ -36,10 +36,16 @@
     - Added `--src_wav/--out_wav/--sim_realtime` to simulate mic streaming from a file and write the result for inspection.
     - `evaluation/vevo_live` streaming simulator now trims long reference audio by default (`--reference_max_sec`, default 10s) for more realistic live-like benchmarking on Mac.
     - Warmup silence now sets `prev_last=0.0` so the first audible chunk fades in from zero (reduces onset clicks).
+  - Fixed “live sounds like noise” root cause:
+    - 600–1000ms streaming windows are often too short for Vevo to preserve intelligibility; updated defaults + presets to use `window_ms=2000, hop_ms=1000` (works well on M3 Max MPS).
+    - `evaluation.vevo_live.search` now searches `window_ms` (not fixed at 1000), enforces a realtime constraint (`rtf_mean <= 1`), and keeps evaluated duration constant across hop sizes via `--eval_seconds`.
+    - `evaluation.vevo_live.regress` now uses `--eval_seconds` and a tighter default `--max_wer 0.9` to catch noisy regressions.
+    - `live_local --src_wav` simulation is now synchronous (no output-buffer underflow artifacts) and includes initial hop delay + tail to match the “hearable” live timeline.
+    - Fixed an OutputRingBuffer underflow bug in `live_local` and `live_client` that could crash on underflows.
 - Now: Use these baselines for repeatable comparisons vs the StyleStream paper, and iterate on live stability/latency without audible clicks.
 - Next:
   - Fix E-SIM comparability: emotion2vec “feats” cosine is highly saturated on our target set (cos≈0.98–0.99 even across different emotions), so raw E-SIM is not directly comparable to the paper’s reported values.
-  - Improve live eval fairness: current `evaluation.vevo_live.search` varies total evaluated audio duration when hop_ms changes (max_hops is fixed), biasing speaker similarity.
+  - Re-test smaller hop sizes (e.g. `window=2000, hop=500`) for lower latency while preserving intelligibility on MPS + 4090.
   - Optional: add a “Mac realtime” live preset (e.g., vevotimbre win=600/hop=600/steps=8 or win=1000/hop=500/steps=6) and run a small quality eval to quantify any quality drop vs RTX 4090.
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).

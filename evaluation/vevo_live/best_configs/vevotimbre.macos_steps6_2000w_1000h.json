@@ -1,7 +1,7 @@
 {
   "inference": {
     "kind": "vevotimbre",
-    "flow_matching_steps": 8,
+    "flow_matching_steps": 6,
     "diffusion_cfg": 1.0,
     "diffusion_rescale_cfg": 0.75,
     "seed": 1234,

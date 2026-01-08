@@ -49,10 +49,17 @@ def main(argv: list[str] | None = None) -> int:
         choices=["wavlm", "resemblyzer"],
     )
 
+    parser.add_argument(
+        "--eval_seconds",
+        type=float,
+        default=4.0,
+        help="Approx. evaluated output seconds per file (kept constant across hop sizes).",
+    )
+
     # Defaults tuned for VC (Whisper WER can be unreliable on short, voice-converted chunks).
     parser.add_argument("--min_similarity", type=float, default=0.70)
     parser.add_argument("--min_content_hubert", type=float, default=0.80)
-    parser.add_argument("--max_wer", type=float, default=10.0)
+    parser.add_argument("--max_wer", type=float, default=0.90)
     parser.add_argument("--max_click_p95", type=float, default=5.0)
     args = parser.parse_args(argv)
 
@@ -87,12 +94,14 @@ def main(argv: list[str] | None = None) -> int:
     content_cos = []
     click_p95s = []
     for wav in wavs[:2]:
+        hop_sec = max(float(cfg.streaming.hop_ms) / 1000.0, 1e-9)
+        max_hops = max(1, int(round(float(args.eval_seconds) / hop_sec)))
         out_wav, sr, stream_stats = simulate_streaming(
             converter,
             reference_wav_path=args.reference_wav,
             source_wav_path=wav,
             cfg=cfg,
-            max_hops=4,
+            max_hops=max_hops,
             reference_max_sec=float(args.reference_max_sec),
         )
         out_path = deg_dir / (Path(wav).stem + ".wav")

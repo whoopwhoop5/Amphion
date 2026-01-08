@@ -132,7 +132,7 @@ python -m models.vc.vevo.live_client \
   --server ws://localhost:8080 \
   --ref assets/vevo_live/target_ref.wav \
   --kind vevotimbre \
-  --window_ms 1000 --hop_ms 500 --fade_ms 20 \
+  --window_ms 2000 --hop_ms 1000 --fade_ms 10 \
   --flow_matching_steps 8
 ```
 
@@ -153,8 +153,8 @@ If you want to avoid network/server RTT (run fully on the local machine), use th
 python -m models.vc.vevo.live_local \
   --ref assets/vevo_live/target_ref.wav \
   --kind vevotimbre \
-  --window_ms 1000 --hop_ms 500 --fade_ms 10 \
-  --flow_matching_steps 6
+  --window_ms 2000 --hop_ms 1000 --fade_ms 10 \
+  --flow_matching_steps 8
 ```
 
 Or load a saved config (recommended for macOS MPS):
@@ -162,17 +162,17 @@ Or load a saved config (recommended for macOS MPS):
 ```bash
 python -m models.vc.vevo.live_local \
   --ref assets/vevo_live/target_ref.wav \
-  --config_json evaluation/vevo_live/best_configs/vevotimbre.macos_steps8_600w_600h.json
+  --config_json evaluation/vevo_live/best_configs/vevotimbre.macos_steps6_2000w_1000h.json
 ```
 
 Notes:
 - For live usage, a short (≈5–10s) clean reference clip is recommended; `live_local` trims the reference by default (`--ref_max_sec 10`).
-- If you hear noise, first verify your audio I/O pipeline with passthrough mode:
+- If you hear noise, first verify your audio I/O pipeline with passthrough mode. If passthrough sounds fine but Vevo sounds like noise, increase the streaming context (Vevo often needs ≥1.5–2.0s windows):
 
 ```bash
 python -m models.vc.vevo.live_local \
   --passthrough \
-  --window_ms 1000 --hop_ms 500 --fade_ms 10
+  --window_ms 2000 --hop_ms 1000 --fade_ms 10
 ```
 
 To test deterministically without a microphone, simulate “mic input” from a wav file:
@@ -180,7 +180,7 @@ To test deterministically without a microphone, simulate “mic input” from a 
 ```bash
 python -m models.vc.vevo.live_local \
   --ref assets/vevo_live/target_ref.wav \
-  --config_json evaluation/vevo_live/best_configs/vevotimbre.macos_steps6_1000w_500h.json \
+  --config_json evaluation/vevo_live/best_configs/vevotimbre.macos_steps6_2000w_1000h.json \
   --src_wav assets/vevo_live/playlist/source_clip_00.wav \
   --out_wav runs/vevo_live/live_local_sim.wav \
   --sim_realtime
@@ -201,7 +201,8 @@ python -m models.vc.vevo.live_local ... --input_device "Your Mic Name" --output_
 python -m evaluation.vevo_live.search \
   --kind vevotimbre \
   --reference_wav assets/vevo_live/target_ref.wav \
-  --playlist_dir assets/vevo_live/playlist
+  --playlist_dir assets/vevo_live/playlist \
+  --eval_seconds 4
 
 # Regression (uses a committed baseline config; adjust thresholds after establishing your own baseline)
 python -m evaluation.vevo_live.regress \

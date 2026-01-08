@@ -46,9 +46,9 @@ class VevoInferenceConfig:
 
 @dataclass(frozen=True)
 class VevoStreamingConfig:
-    window_ms: int = 1000
+    window_ms: int = 2000
     hop_ms: int = 1000
-    fade_ms: int = 20
+    fade_ms: int = 10
     normalize_align: Literal["start", "end"] = "end"
 
 

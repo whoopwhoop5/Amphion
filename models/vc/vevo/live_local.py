@@ -98,9 +98,10 @@ class OutputRingBuffer:
             if self._size < n:
                 self.underflows += 1
                 out = np.zeros(n, dtype=np.float32)
-                if self._size > 0:
-                    out[-self._size :] = self._read_no_lock(self._size)
-                    self._size = 0
+                avail = self._size
+                if avail > 0:
+                    data = self._read_no_lock(avail)
+                    out[-avail:] = data
                 return out
             return self._read_no_lock(n)
 
@@ -163,11 +164,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
 
     parser.add_argument("--io_sample_rate", type=int, default=48000, help="Audio device sample rate.")
-    parser.add_argument("--window_ms", type=int, default=1000)
+    parser.add_argument("--window_ms", type=int, default=2000)
     parser.add_argument("--hop_ms", type=int, default=1000)
-    parser.add_argument("--fade_ms", type=int, default=20)
+    parser.add_argument("--fade_ms", type=int, default=10)
     parser.add_argument("--normalize_align", type=str, default="end", choices=["start", "end"])
-    parser.add_argument("--flow_matching_steps", type=int, default=16)
+    parser.add_argument("--flow_matching_steps", type=int, default=8)
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--diffusion_cfg", type=float, default=1.0)
     parser.add_argument("--diffusion_rescale_cfg", type=float, default=0.75)
@@ -238,15 +239,6 @@ def main(argv: Optional[list[str]] = None) -> int:
         if "prepend_style_ref_to_input" in inf:
             args.no_prepend_style_ref_to_input = not bool(inf["prepend_style_ref_to_input"])
 
-    try:
-        import sounddevice as sd
-    except Exception as e:  # pragma: no cover
-        raise RuntimeError("Missing dependency: sounddevice. Install with `pip install sounddevice`.") from e
-
-    if args.list_devices:
-        print(sd.query_devices())
-        return 0
-
     io_sr = int(args.io_sample_rate)
     model_sr = int(VevoStreamingEngine.model_sr)
 
@@ -263,6 +255,126 @@ def main(argv: Optional[list[str]] = None) -> int:
     block_samples_io = int(round(args.block_ms / 1000 * io_sr))
     if block_samples_io <= 0:
         block_samples_io = 256
+
+    converter = None
+    engine: Optional[VevoStreamingEngine] = None
+    if not args.passthrough:
+        if not args.ref:
+            raise ValueError("--ref is required unless --passthrough")
+        converter = VevoConverter.from_pretrained(
+            kind=args.kind,  # type: ignore[arg-type]
+            device=args.device,
+            repo_cache_dir=args.repo_cache_dir,
+        )
+        engine = VevoStreamingEngine(converter)
+        ref_bytes = _read_ref_bytes_trimmed(str(args.ref), max_sec=float(args.ref_max_sec))
+        engine.prepare_reference_bytes(ref_bytes)
+
+    if args.src_wav:
+        src, src_sr = _load_wav_mono(args.src_wav)
+        if src_sr != io_sr:
+            src = _resample(src, src_sr, io_sr)
+
+        block = int(block_samples_io)
+        if block <= 0:
+            raise ValueError("block_ms too small")
+
+        src_len = len(src)
+        pad = (-src_len) % block
+        if pad:
+            src = np.pad(src, (0, pad), mode="constant")
+
+        ring = AudioRingBuffer(window_samples_model)
+        prev_last: Optional[float] = None
+        buf_io = np.zeros(0, dtype=np.float32)
+
+        # Account for output-buffer underflow before the first hop is produced, matching the
+        # "hearable" timeline of the real live pipeline (output trails input by ~hop_ms).
+        outputs: list[np.ndarray] = [np.zeros(hop_samples_io, dtype=np.float32)]
+        window_count = 0
+        timings: list[float] = []
+
+        block_sec = block / io_sr
+        start_t = time.time()
+
+        for i in range(0, len(src), block):
+            buf_io = np.concatenate([buf_io, src[i : i + block]])
+
+            while len(buf_io) >= hop_samples_io:
+                hop_io = buf_io[:hop_samples_io]
+                buf_io = buf_io[hop_samples_io:]
+
+                hop_model = _resample(hop_io, io_sr, model_sr)
+                hop_model = _normalize_len_end(hop_model, hop_samples_model)
+                ring.write(hop_model)
+
+                if ring.size < window_samples_model:
+                    prev_last = 0.0
+                    outputs.append(np.zeros(hop_samples_io, dtype=np.float32))
+                    continue
+
+                window = ring.read_last(window_samples_model)
+
+                if args.passthrough:
+                    out_window = window
+                else:
+                    assert engine is not None
+                    t0 = time.time()
+                    out_window = engine.convert_window(
+                        window,
+                        flow_matching_steps=args.flow_matching_steps,
+                        diffusion_cfg=args.diffusion_cfg,
+                        diffusion_rescale_cfg=args.diffusion_rescale_cfg,
+                        seed=args.seed + window_count,
+                        ar_max_length=args.ar_max_length,
+                        ar_temperature=args.ar_temperature,
+                        ar_top_k=args.ar_top_k,
+                        ar_top_p=args.ar_top_p,
+                        ar_repeat_penalty=args.ar_repeat_penalty,
+                        ar_min_new_tokens=args.ar_min_new_tokens,
+                        prepend_style_ref_to_input=not bool(args.no_prepend_style_ref_to_input),
+                    )
+                    timings.append(time.time() - t0)
+
+                out_window = normalize_length(out_window, window_samples_model, align=args.normalize_align)
+                out_hop = out_window[-hop_samples_model:].astype(np.float32, copy=False)
+                out_hop = smooth_boundary_inplace(out_hop, prev_last, fade_samples_model)
+                prev_last = float(out_hop[-1]) if len(out_hop) else prev_last
+
+                out_io = _resample(out_hop, model_sr, io_sr)
+                out_io = _normalize_len_end(out_io, hop_samples_io)
+                outputs.append(out_io)
+                window_count += 1
+
+            if args.sim_realtime:
+                next_t = start_t + (i // block + 1) * block_sec
+                time.sleep(max(0.0, next_t - time.time()))
+
+        out = np.concatenate(outputs) if outputs else np.zeros(0, dtype=np.float32)
+        out = out[: src_len + hop_samples_io]
+        Path(args.out_wav).parent.mkdir(parents=True, exist_ok=True)
+        sf.write(args.out_wav, out, io_sr)
+
+        if timings:
+            hop_seconds = hop_samples_model / model_sr
+            mean_sec = float(np.mean(np.asarray(timings, dtype=np.float64)))
+            rtf = mean_sec / max(hop_seconds, 1e-9)
+            print(
+                f"[live_local] file_sim windows={window_count} mean_win_s={mean_sec:.3f} rtf={rtf:.2f}",
+                flush=True,
+            )
+
+        print(f"[live_local] Wrote sim output: {args.out_wav}", flush=True)
+        return 0
+
+    try:
+        import sounddevice as sd
+    except Exception as e:  # pragma: no cover
+        raise RuntimeError("Missing dependency: sounddevice. Install with `pip install sounddevice`.") from e
+
+    if args.list_devices:
+        print(sd.query_devices())
+        return 0
 
     input_q: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=200)
     out_buf = OutputRingBuffer(capacity=int(io_sr * 10))
@@ -287,20 +399,6 @@ def main(argv: Optional[list[str]] = None) -> int:
             pass
         y = out_buf.read(frames)
         outdata[:] = y.reshape(-1, 1)
-
-    converter = None
-    engine: Optional[VevoStreamingEngine] = None
-    if not args.passthrough:
-        if not args.ref:
-            raise ValueError("--ref is required unless --passthrough")
-        converter = VevoConverter.from_pretrained(
-            kind=args.kind,  # type: ignore[arg-type]
-            device=args.device,
-            repo_cache_dir=args.repo_cache_dir,
-        )
-        engine = VevoStreamingEngine(converter)
-        ref_bytes = _read_ref_bytes_trimmed(str(args.ref), max_sec=float(args.ref_max_sec))
-        engine.prepare_reference_bytes(ref_bytes)
 
     def worker() -> None:
         ring = AudioRingBuffer(window_samples_model)
@@ -384,49 +482,6 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
-
-    if args.src_wav:
-        src, src_sr = _load_wav_mono(args.src_wav)
-        if src_sr != io_sr:
-            src = _resample(src, src_sr, io_sr)
-        block = block_samples_io
-        if block <= 0:
-            raise ValueError("block_ms too small")
-
-        pad = (-len(src)) % block
-        if pad:
-            src = np.pad(src, (0, pad), mode="constant")
-
-        outputs: list[np.ndarray] = []
-        block_sec = block / io_sr
-        start_t = time.time()
-        for i in range(0, len(src), block):
-            blk = src[i : i + block]
-            try:
-                input_q.put_nowait(blk)
-            except queue.Full:
-                try:
-                    _ = input_q.get_nowait()
-                except queue.Empty:
-                    pass
-                input_q.put_nowait(blk)
-
-            outputs.append(out_buf.read(block))
-
-            if args.sim_realtime:
-                next_t = start_t + (i // block + 1) * block_sec
-                time.sleep(max(0.0, next_t - time.time()))
-
-        stop.set()
-        thread.join(timeout=10.0)
-        out = np.concatenate(outputs) if outputs else np.zeros(0, dtype=np.float32)
-        Path(args.out_wav).parent.mkdir(parents=True, exist_ok=True)
-        sf.write(args.out_wav, out, io_sr)
-        print(
-            f"[live_local] Wrote sim output: {args.out_wav} (underflows={out_buf.underflows} overflows={out_buf.overflows})",
-            flush=True,
-        )
-        return 0
 
     stream_in = sd.InputStream(
         samplerate=io_sr,

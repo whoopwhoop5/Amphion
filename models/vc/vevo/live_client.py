@@ -92,9 +92,10 @@ class OutputRingBuffer:
             if self._size < n:
                 self.underflows += 1
                 out = np.zeros(n, dtype=np.float32)
-                if self._size > 0:
-                    out[-self._size :] = self._read_no_lock(self._size)
-                    self._size = 0
+                avail = self._size
+                if avail > 0:
+                    data = self._read_no_lock(avail)
+                    out[-avail:] = data
                 return out
             return self._read_no_lock(n)
 
@@ -128,11 +129,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     parser.add_argument("--io_sample_rate", type=int, default=48000, help="Audio device sample rate.")
     parser.add_argument("--model_sample_rate", type=int, default=24000, help="Server/model sample rate.")
-    parser.add_argument("--window_ms", type=int, default=1000)
+    parser.add_argument("--window_ms", type=int, default=2000)
     parser.add_argument("--hop_ms", type=int, default=1000)
-    parser.add_argument("--fade_ms", type=int, default=20)
+    parser.add_argument("--fade_ms", type=int, default=10)
     parser.add_argument("--normalize_align", type=str, default="end", choices=["start", "end"])
-    parser.add_argument("--flow_matching_steps", type=int, default=16)
+    parser.add_argument("--flow_matching_steps", type=int, default=8)
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--diffusion_cfg", type=float, default=1.0)
     parser.add_argument("--diffusion_rescale_cfg", type=float, default=0.75)

@@ -37,14 +37,19 @@ def score_result(metrics: dict[str, Any]) -> float:
     wer = float(metrics.get("wer", 1.0))
     click = float(metrics.get("glitch_boundary_jump_ratio_p95", 0.0))
     window_sec = float(metrics.get("mean_window_sec", 9e9))
+    rtf_mean = float(metrics.get("rtf_mean", 9e9))
 
     if not np.isfinite(content):
         content = 0.0
     if not np.isfinite(wer):
         wer = 1.0
 
+    # Reject clearly non-realtime configs.
+    if rtf_mean > 1.0:
+        return -1e9
+
     # Penalize instability + slow configs. Weights chosen to be conservative; adjust as needed.
-    return 0.60 * sim + 0.40 * content - 0.40 * wer - 0.02 * click - 0.05 * window_sec
+    return 0.60 * sim + 0.40 * content - 0.80 * wer - 0.02 * click - 0.05 * window_sec
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -70,11 +75,52 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     parser.add_argument("--max_files", type=int, default=2)
-    parser.add_argument("--max_hops_per_file", type=int, default=4)
+    parser.add_argument(
+        "--eval_seconds",
+        type=float,
+        default=4.0,
+        help="Approx. evaluated output seconds per file (kept constant across hop sizes).",
+    )
 
     parser.add_argument("--patience", type=int, default=12)
     parser.add_argument("--min_improve", type=float, default=1e-4)
+
+    parser.add_argument(
+        "--flow_steps_grid",
+        type=str,
+        default="6,8,12",
+        help="Comma-separated flow-matching steps to try.",
+    )
+    parser.add_argument(
+        "--window_ms_grid",
+        type=str,
+        default="2000,1500,1000",
+        help="Comma-separated streaming window sizes (ms) to try.",
+    )
+    parser.add_argument(
+        "--hop_ms_grid",
+        type=str,
+        default="1000,750,500",
+        help="Comma-separated streaming hop sizes (ms) to try.",
+    )
+    parser.add_argument(
+        "--fade_ms_grid",
+        type=str,
+        default="0,10",
+        help="Comma-separated boundary fade sizes (ms) to try.",
+    )
     args = parser.parse_args(argv)
+
+    def _parse_int_grid(s: str) -> list[int]:
+        vals = []
+        for part in s.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            vals.append(int(part))
+        if not vals:
+            raise ValueError("Empty grid.")
+        return vals
 
     out_root = Path(args.out_dir) / "search"
     out_root.mkdir(parents=True, exist_ok=True)
@@ -95,9 +141,10 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # Deterministic grid (small by default).
-    flow_steps_grid = [8, 12, 16, 24, 32]
-    hop_ms_grid = [1000, 500, 250] if args.kind == "vevotimbre" else [1000]
-    fade_ms_grid = [0, 10, 20]
+    flow_steps_grid = _parse_int_grid(args.flow_steps_grid)
+    window_ms_grid = _parse_int_grid(args.window_ms_grid)
+    hop_ms_grid = _parse_int_grid(args.hop_ms_grid) if args.kind == "vevotimbre" else [1000]
+    fade_ms_grid = _parse_int_grid(args.fade_ms_grid)
 
     results = []
     best = None
@@ -105,16 +152,23 @@ def main(argv: list[str] | None = None) -> int:
     stale = 0
 
     for flow_steps in flow_steps_grid:
-        for hop_ms in hop_ms_grid:
-            for fade_ms in fade_ms_grid:
-                cfg = EvalConfig(
-                    inference=VevoInferenceConfig(
-                        kind=args.kind,  # type: ignore[arg-type]
-                        flow_matching_steps=flow_steps,
-                        seed=1234,
-                    ),
-                    streaming=VevoStreamingConfig(window_ms=1000, hop_ms=hop_ms, fade_ms=fade_ms),
-                )
+        for window_ms in window_ms_grid:
+            for hop_ms in hop_ms_grid:
+                if hop_ms > window_ms:
+                    continue
+                for fade_ms in fade_ms_grid:
+                    cfg = EvalConfig(
+                        inference=VevoInferenceConfig(
+                            kind=args.kind,  # type: ignore[arg-type]
+                            flow_matching_steps=flow_steps,
+                            seed=1234,
+                        ),
+                        streaming=VevoStreamingConfig(
+                            window_ms=int(window_ms),
+                            hop_ms=int(hop_ms),
+                            fade_ms=int(fade_ms),
+                        ),
+                    )
 
                 cfg_uid = cfg.uid()
                 cfg_dir = out_root / cfg_uid
@@ -126,12 +180,14 @@ def main(argv: list[str] | None = None) -> int:
                 clicks = []
                 mean_window_secs = []
                 for wav in wavs:
+                    hop_sec = max(float(cfg.streaming.hop_ms) / 1000.0, 1e-9)
+                    max_hops = max(1, int(round(float(args.eval_seconds) / hop_sec)))
                     out_wav, sr, stream_stats = simulate_streaming(
                         converter,
                         reference_wav_path=args.reference_wav,
                         source_wav_path=wav,
                         cfg=cfg,
-                        max_hops=args.max_hops_per_file,
+                        max_hops=max_hops,
                         reference_max_sec=float(args.reference_max_sec),
                     )
                     deg_dir = cfg_dir / "deg"
@@ -208,6 +264,8 @@ def main(argv: list[str] | None = None) -> int:
                     "mean_window_sec": float(np.mean(mean_window_secs)) if mean_window_secs else 0.0,
                 }
 
+                hop_sec = max(float(cfg.streaming.hop_ms) / 1000.0, 1e-9)
+                metrics["rtf_mean"] = float(metrics["mean_window_sec"]) / hop_sec
                 metrics["score"] = score_result(metrics)
                 record = {"config": asdict(cfg), "metrics": metrics, "files": per_file}
                 (cfg_dir / "result.json").write_text(json.dumps(record, indent=2))
@@ -229,9 +287,9 @@ def main(argv: list[str] | None = None) -> int:
                     stale += 1
 
                 print(
-                    f"[search] cfg={cfg_uid} flow={flow_steps} hop={hop_ms} fade={fade_ms} "
+                    f"[search] cfg={cfg_uid} flow={flow_steps} win={window_ms} hop={hop_ms} fade={fade_ms} "
                     f"sim={sim:.3f} hubert={metrics['content_hubert_cos']:.3f} wer={metrics['wer']:.3f} click={metrics['glitch_boundary_jump_ratio_p95']:.2f} "
-                    f"win_s={metrics['mean_window_sec']:.2f} score={metrics['score']:.3f} best={best_score:.3f}",
+                    f"win_s={metrics['mean_window_sec']:.2f} rtf={metrics['rtf_mean']:.2f} score={metrics['score']:.3f} best={best_score:.3f}",
                     flush=True,
                 )
 

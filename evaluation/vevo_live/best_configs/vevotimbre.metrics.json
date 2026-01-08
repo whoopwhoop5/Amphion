@@ -1,11 +1,7 @@
 {
-  "cfg_uid": "3f33c88720",
-  "speaker_similarity": 0.7741590440273285,
-  "content_hubert_cos": 0.8875462114810944,
-  "content_hubert_cos_valid_frac": 1.0,
-  "wer": 7.166666666666667,
-  "wer_valid_frac": 0.5,
-  "glitch_boundary_jump_ratio_p95": 8.669064186506148e-07,
-  "mean_window_sec": 0.29254835844039917,
-  "score": -2.0617801909179807
+  "speaker_similarity": 0.9619200229644775,
+  "content_hubert_cos": 0.9892037808895111,
+  "wer": 0.2857142857142857,
+  "click_p95": 6.139186780274031e-06,
+  "note": "Computed with evaluation.vevo_live.regress (eval_seconds=4, whisper=base, similarity=wavlm)."
 }
