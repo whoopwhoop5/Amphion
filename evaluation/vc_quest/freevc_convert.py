@@ -105,6 +105,7 @@ def _infer_freevc(
     mel_spectrogram_torch,
     src_wav_16k: np.ndarray,
     ref_wav_16k: np.ndarray,
+    out_sample_rate: int,
     seed: int,
     device: torch.device,
     ref_trim_db: float,
@@ -141,8 +142,7 @@ def _infer_freevc(
         audio = net_g.infer(c, mel=mel_tgt)
 
     audio_np = audio[0][0].detach().cpu().float().numpy()
-    out_sr = int(getattr(hps.data, "sampling_rate", 16000))
-    return np.asarray(audio_np, dtype=np.float32).reshape(-1), out_sr
+    return np.asarray(audio_np, dtype=np.float32).reshape(-1), int(out_sample_rate)
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -268,6 +268,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             mel_spectrogram_torch=mel_spectrogram_torch,
             src_wav_16k=src_16k,
             ref_wav_16k=ref_16k,
+            out_sample_rate=int(out_sr),
             seed=int(args.seed),
             device=device,
             ref_trim_db=float(args.ref_trim_db),
@@ -328,13 +329,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                     mel_spectrogram_torch=mel_spectrogram_torch,
                     src_wav_16k=window,
                     ref_wav_16k=ref_16k,
+                    out_sample_rate=int(out_sr),
                     seed=int(args.seed) + int(window_count),
                     device=device,
                     ref_trim_db=float(args.ref_trim_db),
                 )
                 timings.append(time.time() - t0)
-                if int(got_sr) != int(out_sr):
-                    out_window = _resample_if_needed(out_window, int(got_sr), int(out_sr))
 
                 out_window = normalize_length(out_window, window_out, align=str(args.normalize_align))  # type: ignore[arg-type]
                 out_hop = out_window[-hop_out:].astype(np.float32, copy=False)
