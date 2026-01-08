@@ -51,9 +51,26 @@ Key constraints:
     - `v5_to_fr_stream`:  S-SIM≈0.938, WER≈0.945  (significant degradation)
     - `fr_to_v5_stream`:  S-SIM≈0.887, WER≈0.648
   - Artifacts: noticeable silence leakage/noise on some runs (e.g., silent_out_db_p95 ≈ -30dB on v5_to_fr).
+- Grid search v1 (RMS VAD, emit_align=end):
+  - Run: `runs/vc_quest/freevc/user_pair_search/*`
+  - Selector: `evaluation/vc_quest/select_best.py` (quality-tier: min S-SIM>=0.85, silent_out_p95<=-25dB, dropout<=0.01, realtime)
+  - Best (quality-tier): `window_ms=600, hop_ms=300` (RTF_p95≈0.234)
+    - `v5_to_fr_stream_w600_h300`:  S-SIM≈0.929, WER≈0.872, silent_out_p95≈-35.0dB, drop≈0.0002
+    - `fr_to_v5_stream_w600_h300`:  S-SIM≈0.868, WER≈0.677, silent_out_p95≈-36.6dB, drop≈0.0036
+  - Observation: overlap helps stability/noise, but streaming still degrades content vs offline (esp. `v5_to_fr`).
+
+- Grid search v2 (WebRTC VAD + hangover, crossfade-prefix, emit_align=center):
+  - Code: `evaluation/vc_quest/freevc_convert.py` + `evaluation/vc_quest/streaming_utils.py`
+  - Run: `runs/vc_quest/freevc/user_pair_search_webrtc_center/*`
+  - Default search script: `scripts/vc_quest/freevc_search_user_pair_gpu.sh`
+  - Top candidates (quality-tier, RTX 4090):
+    - **Best by mean WER:** `window_ms=800, hop_ms=200` (mean_WER≈0.580, min_S-SIM≈0.858, leak_p95≈-30.2dB, drop≈0.004, RTF_p95≈0.359)
+    - **Best by speaker/noise:** `window_ms=800, hop_ms=400` (mean_WER≈0.594, min_S-SIM≈0.875, leak_p95≈-32.2dB, drop≈0.003, RTF_p95≈0.174)
+  - Observation: WebRTC VAD + crossfade reduces silence noise substantially and improves `fr_to_v5` content vs v1; some configs still produce loud silence leakage (e.g. `w600_h400`), so selection must gate on artifacts.
+
 - Next:
-  - Run a small deterministic grid over `(window_ms, hop_ms)` with overlap (`hop_ms < window_ms`) to see if streaming can match offline quality at <=600–1000ms context.
-  - Compare variants (`freevc`, `freevc-s`, `freevc-24`) and tighter reference trimming/VAD thresholds to reduce silence noise.
+  - Listen to the v2 top candidates (`w800_h200` vs `w800_h400`) and decide whether FreeVC meets our real-time quality bar.
+  - If not, move to the next VC candidate (likely target-trained real-time VC) while keeping Vevo as the high-quality baseline.
 
 ## What we record for each candidate
 - **Streaming config:** sample rate, chunk/window, hop, crossfade/OLA, VAD settings, any lookahead.
