@@ -16,9 +16,22 @@ Key constraints:
 ## Candidates (in progress)
 ### 1) OpenVoice (tone color conversion)
 - Bead: `Amphion-ehh.1`
-- Status: in_progress
+- Status: evaluated (likely reject)
 - Hypothesis: zero-shot tone-color conversion could allow <=600ms chunking with acceptable quality.
-- Next: fork/clone, implement offline + streaming simulation wrapper, run same metrics as Vevo.
+- Implementation: `evaluation/vc_quest/openvoice_convert.py` + `scripts/vc_quest/openvoice_*`
+- Artifacts: `runs/vc_quest/openvoice/user_pair/*`
+- Setup notes:
+  - OpenVoice V2 converter checkpoints from MyShell S3.
+  - Installed without upstream deps (to avoid `faster-whisper` / PyAV build), then added minimal text deps for import chain.
+  - Use `OpenVoiceBaseClass` directly (avoids optional `wavmark` watermark dependency).
+- Results (RTX 4090, window=600ms, hop=600ms, fade=10ms, tau=0.3):
+  - Speed: ~30ms per 600ms window (mean), so comfortably real-time.
+  - Quality (Whisper `base` WER on our French samples is very high; speaker sim is high):
+    - `v5_to_fr_offline`: S-SIM≈0.969, WER≈0.835
+    - `fr_to_v5_offline`: S-SIM≈0.934, WER≈0.693
+    - `v5_to_fr_stream`:  S-SIM≈0.962, WER≈0.927
+    - `fr_to_v5_stream`:  S-SIM≈0.949, WER≈0.705
+- Conclusion: extremely fast and high speaker similarity, but weak content preservation (WER), consistent with OpenVoice being designed for tone-color conversion rather than robust any-to-any VC. Keep as a reference, but move on to FreeVC.
 
 ### 2) FreeVC
 - Bead: `Amphion-ehh.2`
@@ -30,4 +43,3 @@ Key constraints:
 - **Speed:** mean/p95 chunk processing time, estimated RTF on RTX 4090.
 - **Objective quality:** Whisper WER (aligned), speaker similarity (WavLM), artifact metrics (silence leakage, dropout, clipping).
 - **Artifacts for listening:** offline + live-sim wavs for the same source/reference pair.
-
