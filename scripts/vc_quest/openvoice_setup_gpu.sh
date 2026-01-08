@@ -48,8 +48,11 @@ fi
 
 cd "${OPENVOICE_DIR}"
 
-# Install as editable with pinned deps from setup.py (expects python>=3.9).
-python -m pip install -e .
+# Install without deps: the upstream pins include faster-whisper->PyAV (build toolchain required).
+python -m pip install -e . --no-deps
+
+# Minimal deps for ToneColorConverter inference.
+python -m pip install -U numpy soundfile scipy librosa
 
 if [[ ! -d "${CKPT_DIR}" ]]; then
   echo "[openvoice_setup] Downloading OpenVoice V2 checkpoints..."
