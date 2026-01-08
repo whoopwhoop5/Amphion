@@ -52,12 +52,13 @@
   - Fixed live “noise / cutouts” root cause: `VevoStreamingEngine.convert_window()` no longer normalizes RMS per window (prevents gain pumping and silence noise amplification).
   - Added wrapper-level VAD gating + peak limiting to `live_local`, `live_server`, `live_client`, and `simulate_streaming` (defaults: `vad_db=-55`, `vad_frame_ms=10`, `peak_limit=0.99`).
   - Strengthened evaluation: added aligned artifact metrics (silence leakage, voiced dropouts, clipping) and new gates in `evaluation/vevo_live/{search,regress}.py`.
-- Now: Use these baselines for repeatable comparisons vs the StyleStream paper, and iterate on live stability/latency without audible clicks.
+- VC quest (2026-01-08):
+  - Evaluated OpenVoice V2 tone-color conversion as a low-latency VC candidate (RTX 4090): very fast (~30ms/600ms window) and high speaker similarity, but poor content preservation by Whisper WER; likely reject (artifacts in `runs/vc_quest/openvoice/user_pair/*`, summary in `docs/vc_quest.md`).
+- Now: VC quest: iterate on low-latency timbre VC alternatives (OpenVoice done/likely reject; FreeVC next) while keeping Vevo as the quality baseline.
 - Next:
-  - GPU (RTX 4090) live tuning: try smaller hops (e.g., 250–500ms) with win>=1500ms to approach ~1s buffered latency while keeping intelligibility.
-  - macOS investigation: confirm whether the `col2im` MPS fallback can be avoided (otherwise macOS live VC remains multi-second-latency).
-  - Fix E-SIM comparability: emotion2vec “feats” cosine is saturated on our target set (cos≈0.98–0.99 even across different emotions), so raw E-SIM is not directly comparable to the paper’s reported values.
+  - Implement FreeVC candidate (offline + streaming sim + scoring), run on RTX 4090, and record results in `docs/vc_quest.md`.
+  - If FreeVC is promising, add a minimal real-time client (mic->chunk->inference->playback) with stable buffering (StyleStream-like 600ms chunks).
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
   - Whether to add optional VAD/gating to skip inference on silence (quality + compute).
-- Working set (files/ids/commands): `models/vc/vevo/{convert.py,live_server.py,live_client.py,live_engine.py}`, `evaluation/stylestream_like/*`, `evaluation/vevo_live/{search.py,regress.py}`, `scripts/vast/*`, `bd list`
+- Working set (files/ids/commands): `evaluation/vc_quest/*`, `scripts/vc_quest/*`, `runs/vc_quest/*`, `docs/vc_quest.md`, `bd list`
