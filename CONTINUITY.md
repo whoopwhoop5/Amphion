@@ -18,7 +18,8 @@
     - Added local benchmark CLI (`python -m evaluation.vevo_live.bench_local`).
     - Fixed `vevovoice` AR generation on MPS by passing `attention_mask` to `transformers.generate`.
     - Default device selection now prefers `mps` when CUDA is unavailable.
-    - Bench results (vevotimbre): win=1000/hop=500/steps=8 mean≈0.52s (RTF≈1.04, borderline), steps=6 mean≈0.40s (RTF≈0.79, realtime); win=600/hop=600/steps=8 mean≈0.50s (RTF≈0.83, realtime).
+    - Re-bench (2026-01-08, vevotimbre): MPS hits `aten::col2im` CPU fallback, so ~1s hops are not real-time (e.g., win=2000/hop=1000/steps=4 mean≈1.64s, RTF≈1.64).
+    - Best stable macOS live config found via tuner: steps=4, win=2000ms, hop=2000ms, fade=10ms (delay_proxy_p95≈3.5s); lower-delay option: steps=4, win=1500ms, hop=1500ms, fade=10ms (delay_proxy_p95≈3.0s).
     - Bench results (vevovoice): win=1000/hop=1000/steps=8 mean≈2.59s (RTF≈2.59, not realtime on MPS).
     - Added Mac live preset configs under `evaluation/vevo_live/best_configs/` for quick local runs.
   - Done (StyleStream-like eval):
@@ -42,11 +43,14 @@
     - `evaluation.vevo_live.regress` now uses `--eval_seconds` and a tighter default `--max_wer 0.9` to catch noisy regressions.
     - `live_local --src_wav` simulation is now synchronous (no output-buffer underflow artifacts) and includes initial hop delay + tail to match the “hearable” live timeline.
     - Fixed an OutputRingBuffer underflow bug in `live_local` and `live_client` that could crash on underflows.
+  - Stronger macOS tuning workflow:
+    - Added deterministic playlist builder (`evaluation/vevo_live/build_playlist.py`) and two-stage macOS tuner (`evaluation/vevo_live/tune_macos.py`).
+    - Fixed `evaluation/vevo_live/search.py` fade-grid evaluation bug and improved regression CLI controls (`--max_files`, `--similarity_device`).
 - Now: Use these baselines for repeatable comparisons vs the StyleStream paper, and iterate on live stability/latency without audible clicks.
 - Next:
-  - Fix E-SIM comparability: emotion2vec “feats” cosine is highly saturated on our target set (cos≈0.98–0.99 even across different emotions), so raw E-SIM is not directly comparable to the paper’s reported values.
-  - Re-test smaller hop sizes (e.g. `window=2000, hop=500`) for lower latency while preserving intelligibility on MPS + 4090.
-  - Optional: add a “Mac realtime” live preset (e.g., vevotimbre win=600/hop=600/steps=8 or win=1000/hop=500/steps=6) and run a small quality eval to quantify any quality drop vs RTX 4090.
+  - GPU (RTX 4090) live tuning: try smaller hops (e.g., 250–500ms) with win>=1500ms to approach ~1s buffered latency while keeping intelligibility.
+  - macOS investigation: confirm whether the `col2im` MPS fallback can be avoided (otherwise macOS live VC remains multi-second-latency).
+  - Fix E-SIM comparability: emotion2vec “feats” cosine is saturated on our target set (cos≈0.98–0.99 even across different emotions), so raw E-SIM is not directly comparable to the paper’s reported values.
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
   - Whether to add optional VAD/gating to skip inference on silence (quality + compute).

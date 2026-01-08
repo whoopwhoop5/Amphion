@@ -162,11 +162,12 @@ Or load a saved config (recommended for macOS MPS):
 ```bash
 python -m models.vc.vevo.live_local \
   --ref assets/vevo_live/target_ref.wav \
-  --config_json evaluation/vevo_live/best_configs/vevotimbre.macos_steps6_2000w_1000h.json
+  --config_json evaluation/vevo_live/best_configs/vevotimbre.macos_steps4_2000w_2000h.json
 ```
 
 Notes:
 - For live usage, a short (≈5–10s) clean reference clip is recommended; `live_local` trims the reference by default (`--ref_max_sec 10`).
+- On Apple Silicon (MPS), Vevo-Timbre currently runs slower than real-time for ~1s hops, so **expect multi-second end-to-end delay**. The configs above prioritize stability over latency.
 - If you hear noise, first verify your audio I/O pipeline with passthrough mode. If passthrough sounds fine but Vevo sounds like noise, increase the streaming context (Vevo often needs ≥1.5–2.0s windows):
 
 ```bash
@@ -180,10 +181,18 @@ To test deterministically without a microphone, simulate “mic input” from a 
 ```bash
 python -m models.vc.vevo.live_local \
   --ref assets/vevo_live/target_ref.wav \
-  --config_json evaluation/vevo_live/best_configs/vevotimbre.macos_steps6_2000w_1000h.json \
+  --config_json evaluation/vevo_live/best_configs/vevotimbre.macos_steps4_2000w_2000h.json \
   --src_wav assets/vevo_live/playlist/source_clip_00.wav \
   --out_wav runs/vevo_live/live_local_sim.wav \
   --sim_realtime
+```
+
+If you want lower latency on macOS (but less headroom), try:
+
+```bash
+python -m models.vc.vevo.live_local \
+  --ref assets/vevo_live/target_ref.wav \
+  --config_json evaluation/vevo_live/best_configs/vevotimbre.macos_steps4_1500w_1500h.json
 ```
 
 To select audio devices:
@@ -203,6 +212,19 @@ python -m evaluation.vevo_live.search \
   --reference_wav assets/vevo_live/target_ref.wav \
   --playlist_dir assets/vevo_live/playlist \
   --eval_seconds 4
+
+# Build a deterministic evaluation playlist from public HF datasets (audio is NOT committed)
+python -m evaluation.vevo_live.build_playlist \
+  --out_dir runs/vevo_live/macos_eval_globe \
+  --dataset globe \
+  --num_sources 30 --min_sec 6 --max_sec 8
+
+# Two-stage tuner for macOS (bench speed first, then run quality metrics on speed-feasible configs)
+python -m evaluation.vevo_live.tune_macos \
+  --kind vevotimbre --device mps \
+  --reference_wav assets/vevo_live/target_ref.wav \
+  --playlist_dir runs/vevo_live/macos_eval_globe/playlist \
+  --out_dir runs/vevo_live/tune_macos_m3max
 
 # Regression (uses a committed baseline config; adjust thresholds after establishing your own baseline)
 python -m evaluation.vevo_live.regress \

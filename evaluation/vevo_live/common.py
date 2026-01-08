@@ -208,11 +208,16 @@ def compute_content_similarity_hubert(
 ) -> float:
     """Content similarity using mean-pooled HuBERT features (cosine)."""
 
+    src_wav = np.asarray(src_wav, dtype=np.float32).reshape(-1)
+    deg_wav = np.asarray(deg_wav, dtype=np.float32).reshape(-1)
+    if len(src_wav) == 0 or len(deg_wav) == 0:
+        return float("nan")
+
     device = converter.device
     pipe = converter.pipeline
 
-    src = torch.from_numpy(np.asarray(src_wav, dtype=np.float32)).unsqueeze(0).to(device)
-    deg = torch.from_numpy(np.asarray(deg_wav, dtype=np.float32)).unsqueeze(0).to(device)
+    src = torch.from_numpy(src_wav).unsqueeze(0).to(device)
+    deg = torch.from_numpy(deg_wav).unsqueeze(0).to(device)
 
     if sample_rate != 16000:
         src_16k = torchaudio.functional.resample(src, sample_rate, 16000)

@@ -48,6 +48,12 @@ def main(argv: list[str] | None = None) -> int:
         default="wavlm",
         choices=["wavlm", "resemblyzer"],
     )
+    parser.add_argument(
+        "--similarity_device",
+        type=str,
+        default="",
+        help="Optional torch device for speaker similarity scoring (e.g. cpu). Default: wavlm->converter device, resemblyzer->cpu.",
+    )
 
     parser.add_argument(
         "--eval_seconds",
@@ -55,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
         default=4.0,
         help="Approx. evaluated output seconds per file (kept constant across hop sizes).",
     )
+    parser.add_argument("--max_files", type=int, default=6, help="Max playlist wavs to evaluate.")
 
     # Defaults tuned for VC (Whisper WER can be unreliable on short, voice-converted chunks).
     parser.add_argument("--min_similarity", type=float, default=0.70)
@@ -81,10 +88,16 @@ def main(argv: list[str] | None = None) -> int:
         kind=cfg.inference.kind,  # type: ignore[arg-type]
         repo_cache_dir=args.repo_cache_dir,
     )
+    import torch
+
+    if str(args.similarity_device).strip():
+        sim_device = torch.device(str(args.similarity_device).strip())
+    else:
+        sim_device = converter.device if args.similarity_model == "wavlm" else torch.device("cpu")
     speaker_scorer = SpeakerSimilarityScorer(
         model_name=args.similarity_model,  # type: ignore[arg-type]
         ref_wav_path=args.reference_wav,
-        device=converter.device,
+        device=sim_device,
     )
 
     deg_dir = out_dir / "deg"
@@ -93,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     wers = []
     content_cos = []
     click_p95s = []
-    for wav in wavs[:2]:
+    for wav in wavs[: args.max_files]:
         hop_sec = max(float(cfg.streaming.hop_ms) / 1000.0, 1e-9)
         max_hops = max(1, int(round(float(args.eval_seconds) / hop_sec)))
         out_wav, sr, stream_stats = simulate_streaming(
