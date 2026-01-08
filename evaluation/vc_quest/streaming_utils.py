@@ -11,6 +11,7 @@ import numpy as np
 
 
 NormalizeAlign = Literal["start", "end"]
+VadFrameMs = Literal[10, 20, 30]
 
 
 def normalize_length(
@@ -60,6 +61,33 @@ def smooth_boundary_inplace(
     return current
 
 
+def crossfade_prefix_inplace(
+    current: np.ndarray,
+    prev_tail: Optional[np.ndarray],
+    fade_len: int,
+) -> np.ndarray:
+    """Blend the start of `current` with the tail of the previous chunk.
+
+    This is a stronger boundary smoother than `smooth_boundary_inplace` because it uses
+    a full overlap region instead of only a single endpoint sample.
+    """
+
+    if prev_tail is None or fade_len <= 0:
+        return current
+
+    current = np.asarray(current, dtype=np.float32).reshape(-1)
+    prev_tail = np.asarray(prev_tail, dtype=np.float32).reshape(-1)
+    fade_len = int(min(fade_len, len(current), len(prev_tail)))
+    if fade_len <= 0:
+        return current
+
+    a = prev_tail[-fade_len:]
+    b = current[:fade_len]
+    w = np.linspace(0.0, 1.0, fade_len, dtype=np.float32)
+    current[:fade_len] = (a * (1.0 - w) + b * w).astype(np.float32, copy=False)
+    return current
+
+
 def _rms_db(
     wav: np.ndarray,
     *,
@@ -98,6 +126,55 @@ def is_silent_rms_db(
     rms = np.sqrt(np.mean(frames * frames, axis=1) + eps)
     db = 20.0 * np.log10(rms + eps)
     return float(np.percentile(db, percentile)) < float(silence_db)
+
+
+def is_voiced_webrtcvad(
+    wav: np.ndarray,
+    *,
+    sample_rate: int,
+    frame_ms: VadFrameMs = 30,
+    aggressiveness: int = 2,
+    min_voiced_ratio: float = 0.1,
+) -> bool:
+    """Voice activity detection using WebRTC VAD.
+
+    Returns True if >= `min_voiced_ratio` of frames are voiced.
+    If `webrtcvad` is unavailable, returns True (i.e., do not gate).
+    """
+
+    wav = np.asarray(wav, dtype=np.float32).reshape(-1)
+    if len(wav) == 0:
+        return False
+
+    if sample_rate not in (8000, 16000, 32000, 48000):
+        raise ValueError("webrtcvad only supports 8k/16k/32k/48k sample rates")
+    if frame_ms not in (10, 20, 30):
+        raise ValueError("webrtcvad only supports 10/20/30ms frame sizes")
+
+    try:
+        import webrtcvad  # type: ignore
+    except Exception:
+        return True
+
+    vad = webrtcvad.Vad(int(aggressiveness))
+    frame = int(round(float(frame_ms) / 1000.0 * float(sample_rate)))
+    frame = max(1, frame)
+
+    # Pad to a whole number of frames (WebRTC VAD expects fixed size).
+    n = int(np.ceil(len(wav) / float(frame)))
+    wav_p = np.pad(wav, (0, n * frame - len(wav)), mode="constant")
+
+    pcm16 = np.clip(wav_p, -1.0, 1.0)
+    pcm16 = (pcm16 * 32767.0).astype(np.int16, copy=False)
+
+    voiced = 0
+    for i in range(n):
+        s = i * frame
+        chunk = pcm16[s : s + frame]
+        if vad.is_speech(chunk.tobytes(), sample_rate):
+            voiced += 1
+
+    return float(voiced) / float(n) >= float(min_voiced_ratio)
 
 
 def apply_peak_limiter(
@@ -164,4 +241,3 @@ class AudioRingBuffer:
         if start < self._write_pos:
             return self._buf[start : self._write_pos].copy()
         return np.concatenate([self._buf[start:], self._buf[: self._write_pos]]).copy()
-

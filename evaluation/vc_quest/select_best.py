@@ -47,6 +47,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run_dir", type=str, required=True)
     parser.add_argument("--out_json", type=str, default="")
     parser.add_argument("--require_rtf_p95", type=float, default=1.0)
+    parser.add_argument(
+        "--require_min_speaker_similarity",
+        type=float,
+        default=0.85,
+        help="Hard-ish constraint; relaxed if nothing matches.",
+    )
+    parser.add_argument(
+        "--require_max_silent_out_db_p95",
+        type=float,
+        default=-25.0,
+        help="Less is better (more negative). Hard-ish constraint; relaxed if nothing matches.",
+    )
+    parser.add_argument(
+        "--require_max_dropout_frac_voiced",
+        type=float,
+        default=0.01,
+        help="Hard-ish constraint; relaxed if nothing matches.",
+    )
     args = parser.parse_args(argv)
 
     run_dir = Path(args.run_dir)
@@ -122,9 +140,47 @@ def main(argv: list[str] | None = None) -> int:
         raise RuntimeError("No complete configs found (need both directions + meta).")
 
     # Primary constraint: real-time.
-    eligible = [r for r in rows if r.rtf_p95 <= float(args.require_rtf_p95)]
-    if not eligible:
-        eligible = rows
+    realtime = [r for r in rows if r.rtf_p95 <= float(args.require_rtf_p95)]
+    base = realtime if realtime else rows
+
+    min_sim_req = float(args.require_min_speaker_similarity)
+    max_leak_req = float(args.require_max_silent_out_db_p95)
+    max_drop_req = float(args.require_max_dropout_frac_voiced)
+
+    tiers: list[tuple[str, callable[[PairMetrics], bool]]] = [
+        (
+            "quality",
+            lambda r: (
+                r.min_speaker_similarity >= min_sim_req
+                and r.max_silent_out_db_p95 <= max_leak_req
+                and r.max_dropout_frac_voiced <= max_drop_req
+            ),
+        ),
+        (
+            "no_leak_constraint",
+            lambda r: (r.min_speaker_similarity >= min_sim_req and r.max_dropout_frac_voiced <= max_drop_req),
+        ),
+        (
+            "no_dropout_constraint",
+            lambda r: (r.min_speaker_similarity >= min_sim_req and r.max_silent_out_db_p95 <= max_leak_req),
+        ),
+        (
+            "no_similarity_constraint",
+            lambda r: (
+                r.max_silent_out_db_p95 <= max_leak_req and r.max_dropout_frac_voiced <= max_drop_req
+            ),
+        ),
+        ("rtf_only", lambda r: True),
+    ]
+
+    tier_name = "rtf_only"
+    eligible = base
+    for name, pred in tiers:
+        subset = [r for r in base if pred(r)]
+        if subset:
+            tier_name = name
+            eligible = subset
+            break
 
     # Sort: lower WER is better, higher min speaker sim is better, lower leak (more negative) is better.
     eligible.sort(
@@ -139,6 +195,7 @@ def main(argv: list[str] | None = None) -> int:
     best = eligible[0]
 
     print("window_ms hop_ms mean_wer min_sim leak_p95_db drop_voiced rtf_p95")
+    print(f"[select_best] tier={tier_name} (eligible={len(eligible)}/{len(base)})")
     for r in eligible[:20]:
         print(
             f"{r.window_ms:8d} {r.hop_ms:6d} {r.mean_wer:7.3f} {r.min_speaker_similarity:7.3f} "
@@ -146,6 +203,13 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     out = {
+        "selection": {
+            "tier": str(tier_name),
+            "require_rtf_p95": float(args.require_rtf_p95),
+            "require_min_speaker_similarity": float(min_sim_req),
+            "require_max_silent_out_db_p95": float(max_leak_req),
+            "require_max_dropout_frac_voiced": float(max_drop_req),
+        },
         "best": {
             "window_ms": int(best.window_ms),
             "hop_ms": int(best.hop_ms),
@@ -166,4 +230,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

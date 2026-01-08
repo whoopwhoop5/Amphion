@@ -21,9 +21,10 @@ import torch
 from evaluation.vc_quest.streaming_utils import (
     AudioRingBuffer,
     apply_peak_limiter,
+    crossfade_prefix_inplace,
     is_silent_rms_db,
+    is_voiced_webrtcvad,
     normalize_length,
-    smooth_boundary_inplace,
 )
 
 
@@ -33,9 +34,15 @@ class StreamConfig:
     hop_ms: int
     fade_ms: int
     normalize_align: str
+    emit_align: str
     drop_warmup_hops: bool
+    vad_mode: str
     vad_db: float
     vad_frame_ms: float
+    vad_hangover_ms: float
+    vad_webrtc_aggressiveness: int
+    vad_webrtc_frame_ms: int
+    vad_webrtc_min_voiced_ratio: float
     peak_limit: float
 
 
@@ -170,14 +177,20 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--hop_ms", type=int, default=600)
     parser.add_argument("--fade_ms", type=int, default=10)
     parser.add_argument("--normalize_align", type=str, default="end", choices=["start", "end"])
+    parser.add_argument("--emit_align", type=str, default="end", choices=["start", "center", "end"])
     parser.add_argument(
         "--drop_warmup_hops",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Drop output until the first full window is available (recommended for eval).",
     )
+    parser.add_argument("--vad_mode", type=str, default="rms", choices=["rms", "webrtc", "off"])
     parser.add_argument("--vad_db", type=float, default=-55.0)
     parser.add_argument("--vad_frame_ms", type=float, default=10.0)
+    parser.add_argument("--vad_hangover_ms", type=float, default=200.0)
+    parser.add_argument("--vad_webrtc_aggressiveness", type=int, default=2)
+    parser.add_argument("--vad_webrtc_frame_ms", type=int, default=30, choices=[10, 20, 30])
+    parser.add_argument("--vad_webrtc_min_voiced_ratio", type=float, default=0.1)
     parser.add_argument("--peak_limit", type=float, default=0.99)
     args = parser.parse_args(argv)
 
@@ -289,12 +302,24 @@ def main(argv: Optional[list[str]] = None) -> int:
         fade_out = int(round(float(args.fade_ms) / 1000.0 * float(out_sr)))
 
         ring = AudioRingBuffer(window_in)
-        prev_last: Optional[float] = None
+        prev_tail: Optional[np.ndarray] = None
 
         drop_warmup_hops = bool(args.drop_warmup_hops)
         outs: list[np.ndarray] = []
         warmup_hops = 0
         window_count = 0
+
+        if args.emit_align == "start":
+            emit_start_out = 0
+        elif args.emit_align == "center":
+            emit_start_out = max(0, (window_out - hop_out) // 2)
+        elif args.emit_align == "end":
+            emit_start_out = max(0, window_out - hop_out)
+        else:
+            raise ValueError(f"Unknown emit_align: {args.emit_align}")
+
+        hangover_hops = int(np.ceil(float(args.vad_hangover_ms) / max(float(args.hop_ms), 1e-6)))
+        hangover_left = 0
 
         for start in range(0, len(src_16k), hop_in):
             hop = src_16k[start : start + hop_in]
@@ -304,20 +329,45 @@ def main(argv: Optional[list[str]] = None) -> int:
 
             if ring.size < window_in:
                 warmup_hops += 1
-                prev_last = 0.0
+                if fade_out > 0:
+                    prev_tail = np.zeros(fade_out, dtype=np.float32)
                 if not drop_warmup_hops:
                     outs.append(np.zeros(hop_out, dtype=np.float32))
                 continue
 
             window = ring.read_last(window_in)
 
-            silent = float(args.vad_db) > -200.0 and is_silent_rms_db(
-                hop,
-                sample_rate=in_sr,
-                frame_ms=float(args.vad_frame_ms),
-                silence_db=float(args.vad_db),
-            )
-            if silent:
+            vad_mode = str(args.vad_mode)
+            if vad_mode == "off":
+                voiced = True
+            elif vad_mode == "rms":
+                voiced = not (
+                    float(args.vad_db) > -200.0
+                    and is_silent_rms_db(
+                        hop,
+                        sample_rate=in_sr,
+                        frame_ms=float(args.vad_frame_ms),
+                        silence_db=float(args.vad_db),
+                    )
+                )
+            elif vad_mode == "webrtc":
+                voiced = is_voiced_webrtcvad(
+                    hop,
+                    sample_rate=in_sr,
+                    frame_ms=int(args.vad_webrtc_frame_ms),  # type: ignore[arg-type]
+                    aggressiveness=int(args.vad_webrtc_aggressiveness),
+                    min_voiced_ratio=float(args.vad_webrtc_min_voiced_ratio),
+                )
+            else:
+                raise ValueError(f"Unknown vad_mode: {vad_mode}")
+
+            if not voiced and hangover_left > 0:
+                voiced = True
+                hangover_left -= 1
+            elif voiced:
+                hangover_left = hangover_hops
+
+            if not voiced:
                 out_hop = np.zeros(hop_out, dtype=np.float32)
             else:
                 t0 = time.time()
@@ -337,18 +387,19 @@ def main(argv: Optional[list[str]] = None) -> int:
                 timings.append(time.time() - t0)
 
                 out_window = normalize_length(out_window, window_out, align=str(args.normalize_align))  # type: ignore[arg-type]
-                out_hop = out_window[-hop_out:].astype(np.float32, copy=False)
+                out_hop = out_window[emit_start_out : emit_start_out + hop_out].astype(np.float32, copy=False)
 
-            out_hop = smooth_boundary_inplace(out_hop, prev_last, fade_out)
+            out_hop = crossfade_prefix_inplace(out_hop, prev_tail, fade_out)
             out_hop = apply_peak_limiter(out_hop, peak_limit=float(args.peak_limit))
-            prev_last = float(out_hop[-1]) if len(out_hop) else prev_last
+            if fade_out > 0:
+                prev_tail = out_hop[-fade_out:].astype(np.float32, copy=True)
 
             outs.append(out_hop)
             window_count += 1
 
         out = np.concatenate(outs) if outs else np.zeros(0, dtype=np.float32)
         sf.write(args.out, out, out_sr)
-        delay_samples = int(window_out - hop_out)
+        delay_samples = int(emit_start_out)
 
     if args.meta_json:
         meta_p = Path(args.meta_json)
@@ -360,9 +411,15 @@ def main(argv: Optional[list[str]] = None) -> int:
                 hop_ms=int(args.hop_ms),
                 fade_ms=int(args.fade_ms),
                 normalize_align=str(args.normalize_align),
+                emit_align=str(args.emit_align),
                 drop_warmup_hops=bool(args.drop_warmup_hops),
+                vad_mode=str(args.vad_mode),
                 vad_db=float(args.vad_db),
                 vad_frame_ms=float(args.vad_frame_ms),
+                vad_hangover_ms=float(args.vad_hangover_ms),
+                vad_webrtc_aggressiveness=int(args.vad_webrtc_aggressiveness),
+                vad_webrtc_frame_ms=int(args.vad_webrtc_frame_ms),
+                vad_webrtc_min_voiced_ratio=float(args.vad_webrtc_min_voiced_ratio),
                 peak_limit=float(args.peak_limit),
             )
             if bool(args.stream)
