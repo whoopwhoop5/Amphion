@@ -179,6 +179,7 @@ class StreamConfig:
     hop_ms: int
     fade_ms: int
     normalize_align: str
+    drop_warmup_hops: bool
     vad_db: float
     vad_frame_ms: float
     peak_limit: float
@@ -309,6 +310,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--hop_ms", type=int, default=600)
     parser.add_argument("--fade_ms", type=int, default=10)
     parser.add_argument("--normalize_align", type=str, default="end", choices=["start", "end"])
+    parser.add_argument(
+        "--drop_warmup_hops",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Drop output until the first full window is available (recommended for eval).",
+    )
     parser.add_argument("--vad_db", type=float, default=-55.0)
     parser.add_argument("--vad_frame_ms", type=float, default=10.0)
     parser.add_argument("--peak_limit", type=float, default=0.99)
@@ -385,9 +392,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         ring = AudioRingBuffer(window_samples)
         prev_last: Optional[float] = None
 
-        # Same “hearable” timeline convention as Vevo live_local:
-        # start with one hop of output silence, then emit silence while warming up.
-        outs: list[np.ndarray] = [np.zeros(hop_samples, dtype=np.float32)]
+        drop_warmup_hops = bool(args.drop_warmup_hops)
+        outs: list[np.ndarray] = []
+        warmup_hops = 0
         window_count = 0
 
         for start in range(0, len(src_ov), hop_samples):
@@ -397,8 +404,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             ring.write(hop)
 
             if ring.size < window_samples:
+                warmup_hops += 1
                 prev_last = 0.0
-                outs.append(np.zeros(hop_samples, dtype=np.float32))
+                if not drop_warmup_hops:
+                    outs.append(np.zeros(hop_samples, dtype=np.float32))
                 continue
 
             window = ring.read_last(window_samples)
@@ -439,8 +448,6 @@ def main(argv: Optional[list[str]] = None) -> int:
             window_count += 1
 
         out = np.concatenate(outs) if outs else np.zeros(0, dtype=np.float32)
-        # Account for the initial hop delay, matching vevo_live live_local behavior.
-        out = out[: len(src_ov) + hop_samples]
         sf.write(args.out, out, target_sr)
         delay_samples = int(window_samples - hop_samples)
 
@@ -454,6 +461,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 hop_ms=int(args.hop_ms),
                 fade_ms=int(args.fade_ms),
                 normalize_align=str(args.normalize_align),
+                drop_warmup_hops=bool(args.drop_warmup_hops),
                 vad_db=float(args.vad_db),
                 vad_frame_ms=float(args.vad_frame_ms),
                 peak_limit=float(args.peak_limit),
@@ -471,6 +479,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
         stats = {
             "delay_samples": int(delay_samples),
+            "warmup_hops": int(warmup_hops) if bool(args.stream) else 0,
             "mean_window_sec": float(np.mean(np.asarray(timings, dtype=np.float64))) if timings else 0.0,
             "p95_window_sec": float(np.percentile(np.asarray(timings, dtype=np.float64), 95))
             if len(timings) >= 2
