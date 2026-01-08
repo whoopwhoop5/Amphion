@@ -8,19 +8,19 @@
     "num_pairs": 600,
     "globe_revision": "579ae1077cac8fda90fbc880c4146f2e4dcf5f03",
     "ravdess_revision": "801611132d134432b0344b04c1545da4fdc93e17",
-    "librispeech_revision": "71cacbfb7e2354c4226d01e70d77d5fca3d04ba1",
+    "libritts_revision": "35f26bdafa9883b5524f17931216af78632db8eb",
     "l2_arctic_revision": "d6235d5c6def64912885f32f9950025d1b39d011"
   },
   "eval": {
     "kind": "vevotimbre",
-    "max_pairs": 100,
+    "max_pairs": 200,
     "whisper_model": "large-v3",
     "use_accent": false,
     "use_emotion": false
   },
   "means": {
-    "wer": 0.0727077922077922,
-    "s_sim": 0.7718587231636047,
+    "wer": 0.065008658008658,
+    "s_sim": 0.7760721400380135,
     "a_sim": null,
     "e_sim": null
   }

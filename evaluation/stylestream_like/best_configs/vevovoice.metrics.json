@@ -8,20 +8,20 @@
     "num_pairs": 600,
     "globe_revision": "579ae1077cac8fda90fbc880c4146f2e4dcf5f03",
     "ravdess_revision": "801611132d134432b0344b04c1545da4fdc93e17",
-    "librispeech_revision": "71cacbfb7e2354c4226d01e70d77d5fca3d04ba1",
+    "libritts_revision": "35f26bdafa9883b5524f17931216af78632db8eb",
     "l2_arctic_revision": "d6235d5c6def64912885f32f9950025d1b39d011"
   },
   "eval": {
     "kind": "vevovoice",
-    "max_pairs": 100,
+    "max_pairs": 200,
     "whisper_model": "large-v3",
     "use_accent": true,
-    "use_emotion": false
+    "use_emotion": true
   },
   "means": {
-    "wer": 0.14067424242424245,
-    "s_sim": 0.7964326620101929,
-    "a_sim": 0.5008724364638328,
-    "e_sim": null
+    "wer": 0.13638474025974026,
+    "s_sim": 0.7967216223478317,
+    "a_sim": 0.5153569024056196,
+    "e_sim": 0.9577339351177215
   }
 }
