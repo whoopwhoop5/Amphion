@@ -30,6 +30,10 @@
     - `vevovoice` (steps=16,cfg=1.2,rescale=0.75): WER≈0.1364, S-SIM≈0.7967, A-SIM≈0.5154, E-SIM≈0.9577
   - Live polish: replaced tail-mix “crossfade” with boundary smoothing (`smooth_boundary_inplace`) and updated live baseline config (`evaluation/vevo_live/best_configs/vevotimbre.json`, fade=10ms).
   - Added single-process local live runner (`models/vc/vevo/live_local.py`) for macOS/desktop usage (no websocket RTT) and documented it in `models/vc/vevo/README.md`.
+  - Live-local debugging/stability improvements:
+    - `live_local` now trims long reference audio by default (`--ref_max_sec`, default 10s) to keep MPS inference realtime.
+    - Added `--passthrough` mode to validate audio I/O without model inference.
+    - Added `--src_wav/--out_wav/--sim_realtime` to simulate mic streaming from a file and write the result for inspection.
 - Now: Use these baselines for repeatable comparisons vs the StyleStream paper, and iterate on live stability/latency without audible clicks.
 - Next:
   - Fix E-SIM comparability: emotion2vec “feats” cosine is highly saturated on our target set (cos≈0.98–0.99 even across different emotions), so raw E-SIM is not directly comparable to the paper’s reported values.

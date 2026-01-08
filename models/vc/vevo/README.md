@@ -165,11 +165,33 @@ python -m models.vc.vevo.live_local \
   --config_json evaluation/vevo_live/best_configs/vevotimbre.macos_steps8_600w_600h.json
 ```
 
+Notes:
+- For live usage, a short (≈5–10s) clean reference clip is recommended; `live_local` trims the reference by default (`--ref_max_sec 10`).
+- If you hear noise, first verify your audio I/O pipeline with passthrough mode:
+
+```bash
+python -m models.vc.vevo.live_local \
+  --passthrough \
+  --window_ms 1000 --hop_ms 500 --fade_ms 10
+```
+
+To test deterministically without a microphone, simulate “mic input” from a wav file:
+
+```bash
+python -m models.vc.vevo.live_local \
+  --ref assets/vevo_live/target_ref.wav \
+  --config_json evaluation/vevo_live/best_configs/vevotimbre.macos_steps6_1000w_500h.json \
+  --src_wav assets/vevo_live/playlist/source_clip_00.wav \
+  --out_wav runs/vevo_live/live_local_sim.wav \
+  --sim_realtime
+```
+
 To select audio devices:
 
 ```bash
 python -m models.vc.vevo.live_client --list_devices
-python -m models.vc.vevo.live_client ... --input_device "Your Mic Name" --output_device "Your Output Name"
+python -m models.vc.vevo.live_local --list_devices
+python -m models.vc.vevo.live_local ... --input_device "Your Mic Name" --output_device "Your Output Name"
 ```
 
 ## Deterministic Autotune + Regression

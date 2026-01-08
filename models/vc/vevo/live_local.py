@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import queue
 import threading
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import soundfile as sf
 from scipy.signal import resample_poly
 
 from models.vc.vevo.live_engine import (
@@ -118,9 +120,32 @@ class OutputRingBuffer:
             return self._size
 
 
+def _load_wav_mono(path: str) -> tuple[np.ndarray, int]:
+    wav, sr = sf.read(path, dtype="float32")
+    if wav.ndim > 1:
+        wav = wav[:, 0]
+    return np.asarray(wav, dtype=np.float32).reshape(-1), int(sr)
+
+
+def _encode_wav_bytes(wav: np.ndarray, sr: int) -> bytes:
+    buf = io.BytesIO()
+    sf.write(buf, wav.astype(np.float32, copy=False), sr, format="WAV")
+    return buf.getvalue()
+
+
+def _read_ref_bytes_trimmed(ref_path: str, *, max_sec: float) -> bytes:
+    wav, sr = _load_wav_mono(ref_path)
+    if max_sec > 0:
+        max_samples = int(round(max_sec * sr))
+        if len(wav) > max_samples:
+            wav = wav[:max_samples]
+            print(f"[live_local] Trimmed ref to {max_sec:.2f}s: {ref_path}", flush=True)
+    return _encode_wav_bytes(wav, sr)
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Vevo live VC (single-process, local inference).")
-    parser.add_argument("--ref", type=str, required=True, help="Reference wav path.")
+    parser.add_argument("--ref", type=str, default=None, help="Reference wav path (required unless --passthrough).")
     parser.add_argument("--kind", type=str, default="vevotimbre", choices=["vevotimbre", "vevovoice"])
     parser.add_argument(
         "--config_json",
@@ -130,6 +155,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     parser.add_argument("--device", type=str, default=None, help="torch device (default: auto; mps on mac)")
     parser.add_argument("--repo_cache_dir", type=str, default="./ckpts/Vevo")
+    parser.add_argument(
+        "--ref_max_sec",
+        type=float,
+        default=10.0,
+        help="Trim reference audio to at most this many seconds (0 to disable).",
+    )
 
     parser.add_argument("--io_sample_rate", type=int, default=48000, help="Audio device sample rate.")
     parser.add_argument("--window_ms", type=int, default=1000)
@@ -158,6 +189,28 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--output_device", type=str, default=None)
     parser.add_argument("--block_ms", type=int, default=20)
     parser.add_argument("--list_devices", action="store_true")
+    parser.add_argument(
+        "--passthrough",
+        action="store_true",
+        help="Debug: bypass Vevo and play back the (buffered) mic audio directly.",
+    )
+    parser.add_argument(
+        "--src_wav",
+        type=str,
+        default=None,
+        help="Debug: simulate mic input from a wav file instead of a live device.",
+    )
+    parser.add_argument(
+        "--out_wav",
+        type=str,
+        default="runs/vevo_live/live_local_sim.wav",
+        help="(with --src_wav) output wav path.",
+    )
+    parser.add_argument(
+        "--sim_realtime",
+        action="store_true",
+        help="(with --src_wav) sleep to simulate real-time device timing.",
+    )
     args = parser.parse_args(argv)
 
     if args.config_json:
@@ -235,21 +288,28 @@ def main(argv: Optional[list[str]] = None) -> int:
         y = out_buf.read(frames)
         outdata[:] = y.reshape(-1, 1)
 
-    def worker() -> None:
+    converter = None
+    engine: Optional[VevoStreamingEngine] = None
+    if not args.passthrough:
+        if not args.ref:
+            raise ValueError("--ref is required unless --passthrough")
         converter = VevoConverter.from_pretrained(
             kind=args.kind,  # type: ignore[arg-type]
             device=args.device,
             repo_cache_dir=args.repo_cache_dir,
         )
         engine = VevoStreamingEngine(converter)
-        engine.prepare_reference_bytes(Path(args.ref).read_bytes())
+        ref_bytes = _read_ref_bytes_trimmed(str(args.ref), max_sec=float(args.ref_max_sec))
+        engine.prepare_reference_bytes(ref_bytes)
 
+    def worker() -> None:
         ring = AudioRingBuffer(window_samples_model)
         prev_last: Optional[float] = None
         buf_io = np.zeros(0, dtype=np.float32)
 
         window_count = 0
         timings: list[float] = []
+        in_rms: list[float] = []
 
         while not stop.is_set():
             try:
@@ -273,22 +333,32 @@ def main(argv: Optional[list[str]] = None) -> int:
                     continue
 
                 window = ring.read_last(window_samples_model)
-                t0 = time.time()
-                out_window = engine.convert_window(
-                    window,
-                    flow_matching_steps=args.flow_matching_steps,
-                    diffusion_cfg=args.diffusion_cfg,
-                    diffusion_rescale_cfg=args.diffusion_rescale_cfg,
-                    seed=args.seed + window_count,
-                    ar_max_length=args.ar_max_length,
-                    ar_temperature=args.ar_temperature,
-                    ar_top_k=args.ar_top_k,
-                    ar_top_p=args.ar_top_p,
-                    ar_repeat_penalty=args.ar_repeat_penalty,
-                    ar_min_new_tokens=args.ar_min_new_tokens,
-                    prepend_style_ref_to_input=not bool(args.no_prepend_style_ref_to_input),
-                )
-                timings.append(time.time() - t0)
+                in_rms.append(float(np.sqrt(np.mean(window * window) + 1e-9)))
+                if len(in_rms) > 200:
+                    in_rms = in_rms[-200:]
+
+                if args.passthrough:
+                    out_window = window
+                else:
+                    assert engine is not None
+                    t0 = time.time()
+                    out_window = engine.convert_window(
+                        window,
+                        flow_matching_steps=args.flow_matching_steps,
+                        diffusion_cfg=args.diffusion_cfg,
+                        diffusion_rescale_cfg=args.diffusion_rescale_cfg,
+                        seed=args.seed + window_count,
+                        ar_max_length=args.ar_max_length,
+                        ar_temperature=args.ar_temperature,
+                        ar_top_k=args.ar_top_k,
+                        ar_top_p=args.ar_top_p,
+                        ar_repeat_penalty=args.ar_repeat_penalty,
+                        ar_min_new_tokens=args.ar_min_new_tokens,
+                        prepend_style_ref_to_input=not bool(args.no_prepend_style_ref_to_input),
+                    )
+                    timings.append(time.time() - t0)
+                    if len(timings) > 200:
+                        timings = timings[-200:]
 
                 out_window = normalize_length(out_window, window_samples_model, align=args.normalize_align)
                 out_hop = out_window[-hop_samples_model:].astype(np.float32, copy=False)
@@ -302,16 +372,61 @@ def main(argv: Optional[list[str]] = None) -> int:
                 if window_count % max(1, int(2.5 / max(hop_seconds, 1e-6))) == 0 and timings:
                     mean_sec = float(np.mean(np.asarray(timings, dtype=np.float64)))
                     rtf = mean_sec / max(hop_seconds, 1e-9)
+                    in_rms_mean = float(np.mean(np.asarray(in_rms, dtype=np.float64))) if in_rms else 0.0
                     print(
-                        f"[live_local] device={converter.device} windows={window_count} "
-                        f"mean_win_s={mean_sec:.3f} rtf={rtf:.2f} out_buf_s={out_buf.size()/io_sr:.2f} "
+                        f"[live_local] device={(converter.device if converter is not None else 'passthrough')} windows={window_count} "
+                        f"mean_win_s={mean_sec:.3f} rtf={rtf:.2f} in_rms={in_rms_mean:.4f} out_buf_s={out_buf.size()/io_sr:.2f} "
                         f"underflows={out_buf.underflows} overflows={out_buf.overflows} in_q={input_q.qsize()}",
                         flush=True,
                     )
                     timings = timings[-50:]
+                    in_rms = in_rms[-50:]
 
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
+
+    if args.src_wav:
+        src, src_sr = _load_wav_mono(args.src_wav)
+        if src_sr != io_sr:
+            src = _resample(src, src_sr, io_sr)
+        block = block_samples_io
+        if block <= 0:
+            raise ValueError("block_ms too small")
+
+        pad = (-len(src)) % block
+        if pad:
+            src = np.pad(src, (0, pad), mode="constant")
+
+        outputs: list[np.ndarray] = []
+        block_sec = block / io_sr
+        start_t = time.time()
+        for i in range(0, len(src), block):
+            blk = src[i : i + block]
+            try:
+                input_q.put_nowait(blk)
+            except queue.Full:
+                try:
+                    _ = input_q.get_nowait()
+                except queue.Empty:
+                    pass
+                input_q.put_nowait(blk)
+
+            outputs.append(out_buf.read(block))
+
+            if args.sim_realtime:
+                next_t = start_t + (i // block + 1) * block_sec
+                time.sleep(max(0.0, next_t - time.time()))
+
+        stop.set()
+        thread.join(timeout=10.0)
+        out = np.concatenate(outputs) if outputs else np.zeros(0, dtype=np.float32)
+        Path(args.out_wav).parent.mkdir(parents=True, exist_ok=True)
+        sf.write(args.out_wav, out, io_sr)
+        print(
+            f"[live_local] Wrote sim output: {args.out_wav} (underflows={out_buf.underflows} overflows={out_buf.overflows})",
+            flush=True,
+        )
+        return 0
 
     stream_in = sd.InputStream(
         samplerate=io_sr,
@@ -332,7 +447,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     print(
         f"[live_local] io_sr={io_sr} model_sr={model_sr} window={args.window_ms}ms hop={args.hop_ms}ms "
-        f"steps={args.flow_matching_steps} block={args.block_ms}ms kind={args.kind}",
+        f"steps={args.flow_matching_steps} block={args.block_ms}ms kind={args.kind} passthrough={bool(args.passthrough)}",
         flush=True,
     )
 
@@ -351,4 +466,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
