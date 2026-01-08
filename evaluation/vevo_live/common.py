@@ -376,7 +376,7 @@ def simulate_streaming(
         if ring.size < window_samples:
             warmup_hops += 1
             input_hops += 1
-            prev_last = None
+            prev_last = 0.0
             if not drop_warmup_hops:
                 outs.append(np.zeros(hop_samples, dtype=np.float32))
             continue

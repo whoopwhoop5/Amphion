@@ -35,6 +35,7 @@
     - Added `--passthrough` mode to validate audio I/O without model inference.
     - Added `--src_wav/--out_wav/--sim_realtime` to simulate mic streaming from a file and write the result for inspection.
     - `evaluation/vevo_live` streaming simulator now trims long reference audio by default (`--reference_max_sec`, default 10s) for more realistic live-like benchmarking on Mac.
+    - Warmup silence now sets `prev_last=0.0` so the first audible chunk fades in from zero (reduces onset clicks).
 - Now: Use these baselines for repeatable comparisons vs the StyleStream paper, and iterate on live stability/latency without audible clicks.
 - Next:
   - Fix E-SIM comparability: emotion2vec “feats” cosine is highly saturated on our target set (cos≈0.98–0.99 even across different emotions), so raw E-SIM is not directly comparable to the paper’s reported values.

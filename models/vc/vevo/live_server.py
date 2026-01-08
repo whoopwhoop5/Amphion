@@ -143,7 +143,7 @@ async def _serve_client(websocket, repo_cache_dir: str, device: Optional[str]) -
 
         ring.write(chunk)
         if ring.size < cfg.window_samples:
-            prev_last = None
+            prev_last = 0.0
             await websocket.send(np.zeros(cfg.hop_samples, dtype=np.float32).tobytes())
             continue
 

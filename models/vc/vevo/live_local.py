@@ -327,7 +327,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 ring.write(hop_model)
 
                 if ring.size < window_samples_model:
-                    prev_last = None
+                    prev_last = 0.0
                     out_io = np.zeros(hop_samples_io, dtype=np.float32)
                     out_buf.write(out_io)
                     continue
