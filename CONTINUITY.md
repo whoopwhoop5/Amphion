@@ -15,17 +15,18 @@
   - Improved eval harness: cached speaker similarity scorer, added HuBERT content similarity metric, fixed streaming alignment (delay) for WER/content scoring, and made Whisper/Vevo imports lazy for CLI usability.
   - Ran Vast smoke autotune and recorded best `vevotimbre` config + metrics under `evaluation/vevo_live/best_configs/`.
 - Done (StyleStream-like eval):
-  - Added `evaluation/stylestream_like/*` to reproduce StyleStream paper objective metrics (Whisper WER, Resemblyzer S-SIM, SpeechBrain accent A-SIM, emotion2vec E-SIM) on a deterministic mini benchmark.
-  - Fixed Vast `/workspace` disk-full by overriding HF cache dirs in scripts and moving the old HF cache to `/root/.cache/huggingface`.
-  - Pinned deps for stability (`ruamel.yaml<0.19.0`, `datasets<3.0.0`) and added missing modelscope deps (`addict`, `simplejson`, `sortedcontainers`).
-  - Ran a baseline Vevo eval on Vast: `runs/stylestream_like_30src` (30 sources × 10 targets = 300 pairs) → mean WER≈0.0449, S-SIM≈0.7727, A-SIM≈0.4015, E-SIM≈0.9528.
-- Now: Use the StyleStream-like eval to compare `vevotimbre` vs `vevovoice` and pick a default config for offline + live (quality vs latency), then lock regression thresholds.
+  - Added `evaluation/stylestream_like/*` to reproduce StyleStream paper objective metrics (Whisper WER, Resemblyzer S-SIM, SpeechBrain accent A-SIM, emotion2vec E-SIM) on a deterministic benchmark.
+  - Updated `stylestream_test` preset to use LibriTTS test-clean sources (`mythicinfinity/libritts`) + GLOBE sources, with L2-ARCTIC accent targets + RAVDESS emotion targets; manifest now records `libritts_revision`.
+  - Silenced noisy third-party logging in StyleStream-like metrics (Whisper + emotion2vec pipeline).
+  - Updated StyleStream-like baselines under `evaluation/stylestream_like/best_configs/` (60 sources, 200 pairs, Whisper large-v3):
+    - `vevotimbre` (steps=32,cfg=1.2,rescale=0.75): WER≈0.0650, S-SIM≈0.7761
+    - `vevovoice` (steps=16,cfg=1.2,rescale=0.75): WER≈0.1364, S-SIM≈0.7967, A-SIM≈0.5154, E-SIM≈0.9577
+  - Live polish: replaced tail-mix “crossfade” with boundary smoothing (`smooth_boundary_inplace`) and updated live baseline config (`evaluation/vevo_live/best_configs/vevotimbre.json`, fade=10ms).
+- Now: Use these baselines for repeatable comparisons vs the StyleStream paper, and iterate on live stability/latency without audible clicks.
 - Next:
-  - Extend the StyleStream-like manifest to better match the paper’s “StyleStream-Test” composition (add LibriTTS test-clean sources and L2-ARCTIC accent targets), keep it deterministic, and re-run baselines.
-  - Run extended `evaluation.vevo_live.search` on full clips (not truncated) and commit updated thresholds.
-  - Real-time polish: tune hop/window defaults, optional limiter, and document recommended audio devices/virtual mic.
+  - Fix E-SIM comparability: emotion2vec “feats” cosine is highly saturated on our target set (cos≈0.98–0.99 even across different emotions), so raw E-SIM is not directly comparable to the paper’s reported values.
+  - Improve live eval fairness: current `evaluation.vevo_live.search` varies total evaluated audio duration when hop_ms changes (max_hops is fixed), biasing speaker similarity.
 - Open questions (UNCONFIRMED if needed):
-  - Best hop/window for stability vs GPU load for `vevotimbre` live mode.
-  - Best content-preservation metric for VC (Whisper WER may be brittle under accent/voice changes).
-  - Whether to add a server-side batching/queue to prevent backlog under heavy configs.
-- Working set (files/ids/commands): `models/vc/vevo/{runner.py,convert.py,live_server.py,live_client.py,live_engine.py}`, `evaluation/vevo_live/{search.py,regress.py}`, `evaluation/stylestream_like/*`, `scripts/vast/*`, `bd list`, `bd show Amphion-ky5`
+  - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
+  - Whether to add optional VAD/gating to skip inference on silence (quality + compute).
+- Working set (files/ids/commands): `models/vc/vevo/{convert.py,live_server.py,live_client.py,live_engine.py}`, `evaluation/stylestream_like/*`, `evaluation/vevo_live/{search.py,regress.py}`, `scripts/vast/*`, `bd list`
