@@ -266,7 +266,7 @@ class AutoregressiveTransformer(nn.Module):
         """
         (
             input_ids,
-            _,
+            input_attention_mask,
             _,
         ) = self.padding_for_input(
             input_ids,
@@ -277,7 +277,7 @@ class AutoregressiveTransformer(nn.Module):
         )
 
         if prompt_output_ids is not None:
-            prompt_output_ids, _, _ = self.padding_for_output(
+            prompt_output_ids, prompt_attention_mask, _ = self.padding_for_output(
                 prompt_output_ids,
                 torch.ones_like(prompt_output_ids),
                 self.output_eos_token_id,
@@ -285,6 +285,9 @@ class AutoregressiveTransformer(nn.Module):
                 self.pad_token_id,
             )
             prompt_output_ids = prompt_output_ids[:, :-1]  # remove the eos token
+            prompt_attention_mask = prompt_attention_mask[:, :-1]
+        else:
+            prompt_attention_mask = None
 
         seed_ctx = nullcontext()
         seed = None
@@ -310,17 +313,26 @@ class AutoregressiveTransformer(nn.Module):
                 ).unsqueeze(1)
 
                 llama_input_emb = torch.cat([input_emb, global_style_emb], dim=1)
+                llama_attention_mask = torch.cat(
+                    [
+                        input_attention_mask,
+                        torch.ones((input_attention_mask.shape[0], 1), device=input_attention_mask.device, dtype=input_attention_mask.dtype),
+                    ],
+                    dim=1,
+                )
 
                 if prompt_output_ids is not None:
                     prompt_output_emb = self.model.model.embed_tokens(prompt_output_ids)
                     llama_input_emb = torch.cat(
                         [llama_input_emb, prompt_output_emb], dim=1
                     )
+                    llama_attention_mask = torch.cat([llama_attention_mask, prompt_attention_mask], dim=1)  # type: ignore[arg-type]
 
                 input_length = llama_input_emb.shape[1]
 
                 gen_tokens = self.model.generate(
                     inputs_embeds=llama_input_emb,
+                    attention_mask=llama_attention_mask,
                     do_sample=True,
                     max_length=max_length,
                     pad_token_id=self.pad_token_id,
@@ -336,10 +348,12 @@ class AutoregressiveTransformer(nn.Module):
                 assert prompt_output_ids is not None
 
                 llama_input_ids = torch.cat([input_ids, prompt_output_ids], dim=-1)
+                llama_attention_mask = torch.cat([input_attention_mask, prompt_attention_mask], dim=-1)  # type: ignore[arg-type]
                 input_length = llama_input_ids.shape[1]
 
                 gen_tokens = self.model.generate(
                     llama_input_ids,
+                    attention_mask=llama_attention_mask,
                     do_sample=True,
                     max_length=max_length,
                     pad_token_id=self.pad_token_id,

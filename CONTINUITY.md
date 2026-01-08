@@ -14,6 +14,12 @@
   - Verified on Vast RTX 4090: offline `vevotimbre` + `vevovoice` smoke outputs generated (`scripts/vast/run_offline_smoke.sh`).
   - Improved eval harness: cached speaker similarity scorer, added HuBERT content similarity metric, fixed streaming alignment (delay) for WER/content scoring, and made Whisper/Vevo imports lazy for CLI usability.
   - Ran Vast smoke autotune and recorded best `vevotimbre` config + metrics under `evaluation/vevo_live/best_configs/`.
+  - Mac local inference feasibility check (M3 Max, Torch MPS):
+    - Added local benchmark CLI (`python -m evaluation.vevo_live.bench_local`).
+    - Fixed `vevovoice` AR generation on MPS by passing `attention_mask` to `transformers.generate`.
+    - Default device selection now prefers `mps` when CUDA is unavailable.
+    - Bench results (vevotimbre): win=1000/hop=500/steps=8 mean≈0.52s (RTF≈1.04, borderline), steps=6 mean≈0.40s (RTF≈0.79, realtime); win=600/hop=600/steps=8 mean≈0.50s (RTF≈0.83, realtime).
+    - Bench results (vevovoice): win=1000/hop=1000/steps=8 mean≈2.59s (RTF≈2.59, not realtime on MPS).
 - Done (StyleStream-like eval):
   - Added `evaluation/stylestream_like/*` to reproduce StyleStream paper objective metrics (Whisper WER, Resemblyzer S-SIM, SpeechBrain accent A-SIM, emotion2vec E-SIM) on a deterministic benchmark.
   - Updated `stylestream_test` preset to use LibriTTS test-clean sources (`mythicinfinity/libritts`) + GLOBE sources, with L2-ARCTIC accent targets + RAVDESS emotion targets; manifest now records `libritts_revision`.
@@ -26,6 +32,7 @@
 - Next:
   - Fix E-SIM comparability: emotion2vec “feats” cosine is highly saturated on our target set (cos≈0.98–0.99 even across different emotions), so raw E-SIM is not directly comparable to the paper’s reported values.
   - Improve live eval fairness: current `evaluation.vevo_live.search` varies total evaluated audio duration when hop_ms changes (max_hops is fixed), biasing speaker similarity.
+  - Optional: add a “Mac realtime” live preset (e.g., vevotimbre win=600/hop=600/steps=8 or win=1000/hop=500/steps=6) and run a small quality eval to quantify any quality drop vs RTX 4090.
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
   - Whether to add optional VAD/gating to skip inference on silence (quality + compute).

@@ -119,9 +119,12 @@ class VevoConverter:
         repo_cache_dir: str = "./ckpts/Vevo",
     ) -> "VevoConverter":
         if device is None:
-            torch_device = (
-                torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-            )
+            if torch.cuda.is_available():
+                torch_device = torch.device("cuda")
+            elif getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+                torch_device = torch.device("mps")
+            else:
+                torch_device = torch.device("cpu")
         else:
             torch_device = torch.device(device)
 
@@ -179,4 +182,3 @@ class VevoConverter:
             raise ValueError(f"Unsupported kind: {self.kind}")
 
         return save_audio(gen_audio, output_path=output_path, target_db=target_db)
-
