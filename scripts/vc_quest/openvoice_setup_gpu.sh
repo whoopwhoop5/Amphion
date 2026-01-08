@@ -51,8 +51,9 @@ cd "${OPENVOICE_DIR}"
 # Install without deps: the upstream pins include faster-whisper->PyAV (build toolchain required).
 python -m pip install -e . --no-deps
 
-# Minimal deps for ToneColorConverter inference.
-python -m pip install -U numpy soundfile scipy librosa
+# Minimal deps for ToneColorConverter inference + OpenVoice import chain.
+# (OpenVoice's API imports the text cleaners which depend on eng_to_ipa/inflect/etc.)
+python -m pip install -U numpy soundfile scipy librosa inflect Unidecode eng_to_ipa pypinyin cn2an jieba
 
 if [[ ! -d "${CKPT_DIR}" ]]; then
   echo "[openvoice_setup] Downloading OpenVoice V2 checkpoints..."
