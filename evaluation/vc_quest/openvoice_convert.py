@@ -315,7 +315,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     # Import OpenVoice lazily so this script is importable without it.
-    from openvoice.api import ToneColorConverter
+    # Use the base class to avoid OpenVoice's optional watermark dependency.
+    from openvoice.api import OpenVoiceBaseClass
 
     device = (
         torch.device(args.device)
@@ -329,7 +330,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not config_path.exists() or not ckpt_path.exists():
         raise FileNotFoundError(f"Missing OpenVoice converter ckpt: {ckpt_dir}")
 
-    converter = ToneColorConverter(str(config_path), device=str(device), enable_watermark=False)
+    converter = OpenVoiceBaseClass(str(config_path), device=str(device))
     converter.load_ckpt(str(ckpt_path))
 
     ref_wav, ref_sr = _load_mono(args.ref)
