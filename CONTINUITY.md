@@ -54,10 +54,13 @@
   - Strengthened evaluation: added aligned artifact metrics (silence leakage, voiced dropouts, clipping) and new gates in `evaluation/vevo_live/{search,regress}.py`.
 - VC quest (2026-01-08):
   - Evaluated OpenVoice V2 tone-color conversion as a low-latency VC candidate (RTX 4090): very fast (~30ms/600ms window) and high speaker similarity, but poor content preservation by Whisper WER; likely reject (artifacts in `runs/vc_quest/openvoice/user_pair/*`, summary in `docs/vc_quest.md`).
-- Now: VC quest: iterate on low-latency timbre VC alternatives (OpenVoice done/likely reject; FreeVC next) while keeping Vevo as the quality baseline.
+- VC quest (2026-01-08):
+  - Improved FreeVC streaming wrapper (WebRTC VAD + hangover, prefix crossfade, emit_align=center) and reran grid on RTX 4090; best configs are `w800/h200` (best mean WER) and `w800/h400` (best speaker/noise). Artifacts in `runs/vc_quest/freevc/user_pair_search_webrtc_center/*` and summary in `docs/vc_quest.md`.
+- Now: VC quest: validate FreeVC v2 listening quality and decide whether to adopt it for real-time timbre VC (keep Vevo as high-quality baseline).
 - Next:
-  - Implement FreeVC candidate (offline + streaming sim + scoring), run on RTX 4090, and record results in `docs/vc_quest.md`.
-  - If FreeVC is promising, add a minimal real-time client (mic->chunk->inference->playback) with stable buffering (StyleStream-like 600ms chunks).
+  - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and decide whether it meets our real-time quality bar.
+  - If yes: implement a minimal real-time FreeVC runner (mic->buffer->GPU inference->playback) using the selected window/hop.
+  - If no: move to next candidate (likely target-trained real-time VC such as RVC/so-vits-svc) while keeping Vevo as the high-quality baseline.
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
   - Whether to add optional VAD/gating to skip inference on silence (quality + compute).
