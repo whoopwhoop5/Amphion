@@ -16,7 +16,7 @@
   "streaming": {
     "window_ms": 1000,
     "hop_ms": 500,
-    "fade_ms": 20,
+    "fade_ms": 10,
     "normalize_align": "end"
   }
 }

@@ -43,11 +43,11 @@ def main(argv: list[str] | None = None) -> int:
         choices=["wavlm", "resemblyzer"],
     )
 
-    # Conservative defaults; tune once you have baseline numbers.
-    parser.add_argument("--min_similarity", type=float, default=0.20)
-    parser.add_argument("--min_content_hubert", type=float, default=0.00)
-    parser.add_argument("--max_wer", type=float, default=0.55)
-    parser.add_argument("--max_click_p95", type=float, default=50.0)
+    # Defaults tuned for VC (Whisper WER can be unreliable on short, voice-converted chunks).
+    parser.add_argument("--min_similarity", type=float, default=0.70)
+    parser.add_argument("--min_content_hubert", type=float, default=0.80)
+    parser.add_argument("--max_wer", type=float, default=10.0)
+    parser.add_argument("--max_click_p95", type=float, default=5.0)
     args = parser.parse_args(argv)
 
     cfg_raw = json.loads(Path(args.config_json).read_text())
