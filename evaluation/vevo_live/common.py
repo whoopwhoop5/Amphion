@@ -321,8 +321,8 @@ def simulate_streaming(
     from models.vc.vevo.live_engine import (
         AudioRingBuffer,
         VevoStreamingEngine,
-        crossfade_inplace,
         normalize_length,
+        smooth_boundary_inplace,
     )
 
     engine = VevoStreamingEngine(converter)
@@ -339,7 +339,7 @@ def simulate_streaming(
     fade_samples = int(round(cfg.streaming.fade_ms / 1000 * engine.model_sr))
 
     ring = AudioRingBuffer(window_samples)
-    prev_tail = None
+    prev_last: Optional[float] = None
     outs = []
 
     input_hops = 0
@@ -359,6 +359,7 @@ def simulate_streaming(
         if ring.size < window_samples:
             warmup_hops += 1
             input_hops += 1
+            prev_last = None
             if not drop_warmup_hops:
                 outs.append(np.zeros(hop_samples, dtype=np.float32))
             continue
@@ -383,8 +384,8 @@ def simulate_streaming(
 
         out_window = normalize_length(out_window, window_samples, align=cfg.streaming.normalize_align)
         hop = out_window[-hop_samples:].astype(np.float32, copy=False)
-        hop = crossfade_inplace(hop, prev_tail, fade_samples)
-        prev_tail = hop[-fade_samples:].copy() if fade_samples > 0 else None
+        hop = smooth_boundary_inplace(hop, prev_last, fade_samples)
+        prev_last = float(hop[-1]) if len(hop) else prev_last
 
         outs.append(hop)
         window_count += 1

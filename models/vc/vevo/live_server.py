@@ -18,8 +18,8 @@ import torch
 
 from models.vc.vevo.live_engine import (
     AudioRingBuffer,
-    crossfade_inplace,
     normalize_length,
+    smooth_boundary_inplace,
 )
 from models.vc.vevo.runner import VevoConverter
 from models.vc.vevo.live_engine import VevoStreamingEngine
@@ -111,7 +111,7 @@ async def _serve_client(websocket, repo_cache_dir: str, device: Optional[str]) -
     engine.prepare_reference_bytes(ref_bytes)
 
     ring = AudioRingBuffer(cfg.window_samples)
-    prev_tail: Optional[np.ndarray] = None
+    prev_last: Optional[float] = None
 
     await websocket.send(
         json.dumps(
@@ -143,6 +143,7 @@ async def _serve_client(websocket, repo_cache_dir: str, device: Optional[str]) -
 
         ring.write(chunk)
         if ring.size < cfg.window_samples:
+            prev_last = None
             await websocket.send(np.zeros(cfg.hop_samples, dtype=np.float32).tobytes())
             continue
 
@@ -165,8 +166,8 @@ async def _serve_client(websocket, repo_cache_dir: str, device: Optional[str]) -
 
         out_window = normalize_length(out_window, cfg.window_samples, align=cfg.normalize_align)  # type: ignore[arg-type]
         hop = out_window[-cfg.hop_samples :].astype(np.float32, copy=False)
-        hop = crossfade_inplace(hop, prev_tail, cfg.fade_samples)
-        prev_tail = hop[-cfg.fade_samples :].copy() if cfg.fade_samples > 0 else None
+        hop = smooth_boundary_inplace(hop, prev_last, cfg.fade_samples)
+        prev_last = float(hop[-1]) if len(hop) else prev_last
 
         await websocket.send(hop.tobytes())
         window_count += 1
@@ -219,4 +220,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

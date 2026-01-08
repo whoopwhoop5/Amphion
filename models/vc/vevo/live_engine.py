@@ -65,6 +65,33 @@ def crossfade_inplace(
     return current
 
 
+def smooth_boundary_inplace(
+    current: np.ndarray,
+    prev_last: Optional[float],
+    fade_len: int,
+) -> np.ndarray:
+    """Reduce boundary clicks by matching the first sample to the previous chunk end.
+
+    Unlike a true crossfade (which assumes time-overlap), this applies a short, tapering
+    offset to the start of the current chunk so the first sample equals `prev_last`.
+    """
+
+    if prev_last is None or fade_len <= 0:
+        return current
+
+    fade_len = min(fade_len, len(current))
+    if fade_len <= 0:
+        return current
+
+    delta = float(prev_last) - float(current[0])
+    if not np.isfinite(delta):
+        return current
+
+    fade = np.linspace(1.0, 0.0, fade_len, dtype=np.float32)
+    current[:fade_len] = (current[:fade_len] + delta * fade).astype(np.float32, copy=False)
+    return current
+
+
 def normalize_rms_db(
     wav: np.ndarray,
     *,
