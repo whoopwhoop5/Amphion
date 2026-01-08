@@ -51,6 +51,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Deterministic Vevo live VC autotune.")
     parser.add_argument("--kind", type=str, default="vevotimbre", choices=["vevotimbre", "vevovoice"])
     parser.add_argument("--reference_wav", type=str, required=True)
+    parser.add_argument(
+        "--reference_max_sec",
+        type=float,
+        default=10.0,
+        help="Trim reference audio to at most this many seconds (0 to disable).",
+    )
     parser.add_argument("--playlist_dir", type=str, required=True, help="Folder of 24000Hz mono wavs.")
     parser.add_argument("--out_dir", type=str, default="runs/vevo_live")
     parser.add_argument("--repo_cache_dir", type=str, default="./ckpts/Vevo")
@@ -126,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
                         source_wav_path=wav,
                         cfg=cfg,
                         max_hops=args.max_hops_per_file,
+                        reference_max_sec=float(args.reference_max_sec),
                     )
                     deg_dir = cfg_dir / "deg"
                     deg_dir.mkdir(parents=True, exist_ok=True)

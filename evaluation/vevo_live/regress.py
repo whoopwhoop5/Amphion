@@ -31,6 +31,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Vevo live VC regression suite.")
     parser.add_argument("--config_json", type=str, required=True, help="EvalConfig JSON (as produced by search).")
     parser.add_argument("--reference_wav", type=str, required=True)
+    parser.add_argument(
+        "--reference_max_sec",
+        type=float,
+        default=10.0,
+        help="Trim reference audio to at most this many seconds (0 to disable).",
+    )
     parser.add_argument("--playlist_dir", type=str, required=True)
     parser.add_argument("--out_dir", type=str, default="runs/vevo_live/regress")
     parser.add_argument("--repo_cache_dir", type=str, default="./ckpts/Vevo")
@@ -87,6 +93,7 @@ def main(argv: list[str] | None = None) -> int:
             source_wav_path=wav,
             cfg=cfg,
             max_hops=4,
+            reference_max_sec=float(args.reference_max_sec),
         )
         out_path = deg_dir / (Path(wav).stem + ".wav")
         write_wav(str(out_path), out_wav, sr)

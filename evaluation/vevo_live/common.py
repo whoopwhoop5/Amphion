@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import time
 from dataclasses import asdict, dataclass
@@ -76,6 +77,21 @@ def load_mono(path: str) -> tuple[np.ndarray, int]:
     if wav.ndim > 1:
         wav = wav[:, 0]
     return wav, int(sr)
+
+
+def _encode_wav_bytes(wav: np.ndarray, sr: int) -> bytes:
+    buf = io.BytesIO()
+    sf.write(buf, np.asarray(wav, dtype=np.float32).reshape(-1), sr, format="WAV")
+    return buf.getvalue()
+
+
+def read_reference_wav_bytes(path: str, *, max_sec: float = 10.0) -> bytes:
+    wav, sr = load_mono(path)
+    if max_sec > 0:
+        max_samples = int(round(max_sec * sr))
+        if len(wav) > max_samples:
+            wav = wav[:max_samples]
+    return _encode_wav_bytes(wav, sr)
 
 
 def write_wav(path: str, wav: np.ndarray, sr: int) -> None:
@@ -313,6 +329,7 @@ def simulate_streaming(
     cfg: EvalConfig,
     max_hops: int = 0,
     drop_warmup_hops: bool = True,
+    reference_max_sec: float = 10.0,
 ) -> tuple[np.ndarray, int, dict[str, Any]]:
     """Run a deterministic, server-equivalent streaming simulation on a single file."""
 
@@ -326,7 +343,7 @@ def simulate_streaming(
     )
 
     engine = VevoStreamingEngine(converter)
-    engine.prepare_reference_bytes(Path(reference_wav_path).read_bytes())
+    engine.prepare_reference_bytes(read_reference_wav_bytes(reference_wav_path, max_sec=reference_max_sec))
 
     src, sr = load_mono(source_wav_path)
     if sr != engine.model_sr:
