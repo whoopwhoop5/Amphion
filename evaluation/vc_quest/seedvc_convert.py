@@ -447,7 +447,11 @@ def _offline_convert(
                 )
         vc_target = vc_target[:, :, mel2.size(-1) :]
 
-        vc_wave = model_set.vocoder_fn(vc_target.float()).squeeze()
+        # Seed-VC's CFM inference can return "inference tensors" on some PyTorch versions
+        # (internally using inference_mode). HiFT's weight_norm stack isn't compatible with
+        # inference tensors (it tries to save tensors for backward), so force a regular tensor.
+        vc_target = vc_target.float().clone()
+        vc_wave = model_set.vocoder_fn(vc_target).squeeze()
         vc_wave_np = vc_wave.detach().cpu().float().numpy().reshape(-1).astype(np.float32, copy=False)
 
         if processed == 0:
@@ -619,6 +623,7 @@ class SeedVCStreamingEngine:
                     inference_cfg_rate=float(self.inference_cfg_rate),
                 )
             vc_target = vc_target[:, :, self.mel2.size(-1) :]
+            vc_target = vc_target.float().clone()
             vc_wave = self.model_set.vocoder_fn(vc_target).squeeze()
 
         out_len = int(self.return_length * self.sr // 50)
