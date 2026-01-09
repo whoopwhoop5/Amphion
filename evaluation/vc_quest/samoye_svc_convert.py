@@ -318,29 +318,21 @@ def _compute_f0(
     wav_16k: np.ndarray,
     device: "torch.device",
 ) -> np.ndarray:
-    import torch
-    import crepe  # type: ignore[import-not-found]
-
     wav_16k = np.asarray(wav_16k, dtype=np.float32).reshape(-1)
-    audio = torch.tensor(np.copy(wav_16k), device=device)[None]
-    audio = audio + torch.randn_like(audio) * 0.001
+    _ = device
 
-    # SaMoye uses 20ms hop then repeats by 2.
-    hop_length = 320
-    pitch = crepe.predict(
-        audio,
-        16000,
-        hop_length,
-        50,
-        1000,
-        "full",
-        batch_size=512,
-        device=str(device),
-        return_periodicity=False,
+    import pyworld  # type: ignore[import-not-found]
+
+    x = wav_16k.astype(np.double, copy=False)
+    f0, t = pyworld.dio(
+        x,
+        fs=16000,
+        f0_ceil=900,
+        frame_period=10.0,  # ms (matches 10ms SVC frames)
     )
-    pitch = np.repeat(pitch, 2, -1)
-    pitch = crepe.filter.mean(pitch, 5).squeeze(0)
-    return np.asarray(pitch, dtype=np.float32).reshape(-1)
+    f0 = pyworld.stonemask(x, f0, t, fs=16000)
+    f0 = np.asarray(f0, dtype=np.float32).reshape(-1)
+    return np.round(f0, 1)
 
 
 def _infer_full(
