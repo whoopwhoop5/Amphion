@@ -35,11 +35,16 @@ conda activate "${ENV_NAME}"
 echo "[knnvc_run] Using knnvc_dir=${KNNVC_DIR} topk=${TOPK} prematched=${PREMATCHED}"
 echo "[knnvc_run] Streaming: window=${STREAM_WINDOW_MS}ms hop=${STREAM_HOP_MS}ms seed=${SEED}"
 
+PREMATCHED_FLAG="--prematched"
+if [[ "${PREMATCHED}" != "true" ]]; then
+  PREMATCHED_FLAG="--no-prematched"
+fi
+
 python -m evaluation.vc_quest.knnvc_convert \
   --knnvc_dir "${KNNVC_DIR}" \
   --device cuda:0 \
   --seed "${SEED}" \
-  --prematched "${PREMATCHED}" \
+  ${PREMATCHED_FLAG} \
   --topk "${TOPK}" \
   --tgt_loudness_db "${TGT_LOUDNESS_DB}" \
   --ref "${REF_FR}" \
@@ -51,7 +56,7 @@ python -m evaluation.vc_quest.knnvc_convert \
   --knnvc_dir "${KNNVC_DIR}" \
   --device cuda:0 \
   --seed "${SEED}" \
-  --prematched "${PREMATCHED}" \
+  ${PREMATCHED_FLAG} \
   --topk "${TOPK}" \
   --tgt_loudness_db "${TGT_LOUDNESS_DB}" \
   --ref "${REF_V5}" \
@@ -63,7 +68,7 @@ python -m evaluation.vc_quest.knnvc_convert \
   --knnvc_dir "${KNNVC_DIR}" \
   --device cuda:0 \
   --seed "${SEED}" \
-  --prematched "${PREMATCHED}" \
+  ${PREMATCHED_FLAG} \
   --topk "${TOPK}" \
   --tgt_loudness_db "${TGT_LOUDNESS_DB}" \
   --ref "${REF_FR}" \
@@ -79,7 +84,7 @@ python -m evaluation.vc_quest.knnvc_convert \
   --knnvc_dir "${KNNVC_DIR}" \
   --device cuda:0 \
   --seed "${SEED}" \
-  --prematched "${PREMATCHED}" \
+  ${PREMATCHED_FLAG} \
   --topk "${TOPK}" \
   --tgt_loudness_db "${TGT_LOUDNESS_DB}" \
   --ref "${REF_V5}" \
@@ -123,4 +128,3 @@ python -m evaluation.vc_quest.score_outputs \
   --out_json "${RUN_DIR}/fr_to_v5_stream.report.json"
 
 echo "[knnvc_run] Wrote artifacts to ${RUN_DIR}"
-
