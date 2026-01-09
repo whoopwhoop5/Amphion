@@ -36,6 +36,16 @@ def _add_sys_path_first(path: str) -> None:
     sys.path.insert(0, path)
 
 
+def _purge_import_cache(prefix: str) -> None:
+    # Seed-VC uses a top-level `modules/` package name that conflicts with Amphion's own
+    # `modules/` package. If Amphion's `modules` is already imported, Python will keep using
+    # it from `sys.modules` even after we prepend Seed-VC to sys.path. Purge the import
+    # cache to force a clean import from Seed-VC.
+    for name in list(sys.modules.keys()):
+        if name == prefix or name.startswith(prefix + "."):
+            del sys.modules[name]
+
+
 @contextlib.contextmanager
 def _pushd(path: str):
     prev = os.getcwd()
@@ -161,6 +171,7 @@ def _load_seedvc_models(
     import yaml
 
     _add_sys_path_first(seedvc_dir)
+    _purge_import_cache("modules")
 
     with _pushd(seedvc_dir):
         from hf_utils import load_custom_model_from_hf  # type: ignore[import-not-found]
