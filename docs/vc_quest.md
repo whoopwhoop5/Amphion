@@ -116,13 +116,23 @@ Key constraints:
 
 ### 5) kNN-VC (nearest-neighbor VC)
 - Bead: `Amphion-ehh.7`
-- Status: in_progress
+- Status: evaluated (likely reject)
 - Hypothesis: kNN-VC can be streamed with small windows (<=600ms); main costs are WavLM feature extraction + kNN search + HiFiGAN.
 - Implementation: `evaluation/vc_quest/knnvc_convert.py` + `scripts/vc_quest/knnvc_*`
 - Notes:
   - Requires ~16kHz I/O; output is 16kHz.
   - Quality usually improves with more reference speech; we start with our 10s reference clips.
   - Wrapper default disables per-window loudness normalization (`tgt_loudness_db=none`) to avoid gain pumping; we rely on our artifact gates + peak limiter.
+- Artifacts: `runs/vc_quest/knnvc/user_pair/*`
+- Results (RTX 4090, window=600ms, hop=300ms, fade=10ms, VAD=WebRTC):
+  - Speed: mean per window ≈ 35ms => RTF ≈ 0.06 (very fast).
+  - Offline:
+    - `v5_to_fr_offline`: S-SIM≈0.929, WER≈0.901, leak_p95≈-47.9dB, drop≈0.0005
+    - `fr_to_v5_offline`: S-SIM≈0.977, WER≈0.909, leak_p95≈-32.6dB, drop≈0.0000
+  - Stream:
+    - `v5_to_fr_stream`: S-SIM≈0.944, WER≈0.872, leak_p95≈-46.4dB, drop≈0.0246
+    - `fr_to_v5_stream`: S-SIM≈0.977, WER≈0.870, leak_p95≈-39.0dB, drop≈0.0008
+  - Conclusion: extremely fast and high speaker similarity, but weak content preservation (high WER) and occasional streaming dropouts; likely reject for our use case.
 
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
