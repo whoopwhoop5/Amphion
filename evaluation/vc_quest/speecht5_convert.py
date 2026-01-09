@@ -242,7 +242,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     try:
         _ensure_sinusoidal_pos_encoding_len(
-            model.speecht5.decoder.prenet.pos_sinusoidal_embed,
+            model.speecht5.decoder.prenet.encode_positions,
             min_len=int(args.pos_max_len),
         )
     except Exception:
