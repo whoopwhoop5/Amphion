@@ -177,6 +177,9 @@ def _infer_ezvc(
     if not gen_units:
         return np.zeros(0, dtype=np.float32)
 
+    if ref_audio.ndim != 2:
+        raise ValueError(f"Expected ref_audio waveform tensor shaped (B, N), got {tuple(ref_audio.shape)}")
+
     full_text = [ref_units + gen_units]
     final_text_list = convert_char_to_pinyin(full_text)
 
@@ -197,7 +200,10 @@ def _infer_ezvc(
     generated = generated[:, ref_audio_len_frames:, :]
     generated = generated.permute(0, 2, 1)
 
-    wave = vocoder(generated)
+    if hasattr(vocoder, "decode"):
+        wave = vocoder.decode(generated)
+    else:
+        wave = vocoder(generated)
     wave = wave.squeeze().detach().cpu().float().numpy().reshape(-1)
     return np.asarray(wave, dtype=np.float32).reshape(-1)
 
@@ -253,7 +259,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     from hydra.utils import get_class
     from omegaconf import OmegaConf
 
-    from f5_tts.infer.utils_infer import load_model, load_vocoder
+    from f5_tts.infer.utils_infer import load_model, load_vocoder as _f5_load_vocoder
     from f5_tts.model.utils import convert_char_to_pinyin
 
     # XEUS units.
@@ -271,7 +277,24 @@ def main(argv: Optional[list[str]] = None) -> int:
     model_cls = get_class(f"f5_tts.model.{model_cfg.model.backbone}")
     model_arc = model_cfg.model.arch
 
-    vocoder = load_vocoder(vocoder_name=str(args.vocoder_name), device=str(device))
+    def _load_vocoder(vocoder_name: str):
+        vocoder_name = str(vocoder_name)
+        if vocoder_name == "bigvgan":
+            try:
+                import bigvgan  # type: ignore[import-not-found]
+            except Exception as exc:  # pragma: no cover - only hit if upstream layout changes
+                raise RuntimeError(
+                    "Failed to import BigVGAN. Ensure EZ-VC submodules are initialized "
+                    "(git submodule update --init --recursive)."
+                ) from exc
+
+            vocoder = bigvgan.BigVGAN.from_pretrained("SPRINGLab/bigvgan_16khz", use_cuda_kernel=False)
+            vocoder.remove_weight_norm()
+            return vocoder.eval().to(device)
+
+        return _f5_load_vocoder(vocoder_name=vocoder_name, device=str(device))
+
+    vocoder = _load_vocoder(str(args.vocoder_name))
     model = load_model(
         model_cls,
         model_arc,
@@ -310,7 +333,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     ref_units = _units_to_text(ref_units_ids, unit_map)
 
     # Reference conditioning audio (tensor).
-    ref_audio = torch.from_numpy(ref_16k).to(device).unsqueeze(0).unsqueeze(0)
+    ref_audio = torch.from_numpy(ref_16k).to(device).unsqueeze(0)
     rms = torch.sqrt(torch.mean(ref_audio**2) + 1e-9)
     target_rms = 0.1
     scaled = False
@@ -318,8 +341,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         ref_audio = ref_audio * float(target_rms) / rms
         scaled = True
 
-    hop_length = 160
-    ref_audio_len_frames = int(ref_audio.shape[-1] // hop_length)
+    hop_length = int(getattr(getattr(model, "mel_spec", None), "hop_length", 160))
+    # Use the model's mel extractor to estimate the conditioning frame count. Different mel backends
+    # (e.g., vocos vs bigvgan) may pad/center differently, so waveform_len//hop can be off.
+    with torch.no_grad():
+        ref_audio_len_frames = int(model.mel_spec(ref_audio).shape[-1])
 
     out_sr = 16000
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
@@ -542,4 +568,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
