@@ -56,6 +56,24 @@ fi
 
 cd "${MEANVC_DIR}"
 
+# MeanVC's `src/model/__init__.py` imports training-only modules (wandb) at import time,
+# which breaks lightweight inference installs. Patch it to keep inference imports only.
+python - <<'PY'
+from pathlib import Path
+
+p = Path("src/model/__init__.py")
+text = """from src.model.backbones.dit import DiT
+from src.model.cfm_mean_flow import MeanFlow
+
+# NOTE: Avoid importing training-only dependencies (e.g., wandb) at package import time.
+# Our vc_quest integration only needs inference modules.
+
+__all__ = [\"MeanFlow\", \"DiT\"]
+"""
+p.write_text(text)
+print(f"[meanvc_setup] Patched: {p}")
+PY
+
 echo "[meanvc_setup] Downloading MeanVC inference checkpoints (HF: ASLP-lab/MeanVC)..."
 python download_ckpt.py
 

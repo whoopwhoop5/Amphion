@@ -154,7 +154,9 @@ class MeanVCStreamer:
         self.vc.eval()
 
         self.asr = torch.jit.load(str(self.asr_ckpt_path)).to(self.device)
-        self.vocoder = torch.jit.load(str(self.vocoder_ckpt_path)).to(self.device)
+        # NOTE: `vocos.pt` TorchScript has a CUDA bug where repeated `.decode()` calls
+        # can fail with "UNSUPPORTED DTYPE: complex". CPU `.decode()` is stable and fast.
+        self.vocoder = torch.jit.load(str(self.vocoder_ckpt_path)).to("cpu")
 
         self.sv = init_sv_model("wavlm_large", str(self.sv_ckpt_path)).to(self.device)
         self.sv.eval()
@@ -212,6 +214,7 @@ class MeanVCStreamer:
         self.vc_cache: Optional["torch.Tensor"] = None
         self.vc_kv_cache = None
 
+        # Keep vocoder cache on CPU (vocoder runs on CPU).
         self.vocoder_cache: Optional["torch.Tensor"] = None
         self.last_wav: Optional[np.ndarray] = None
 
@@ -289,10 +292,10 @@ class MeanVCStreamer:
         self.vc_offset += int(x.shape[1])
         self.vc_cache = x
 
-        mel = x.transpose(1, 2)
+        mel = x.transpose(1, 2).detach().cpu().float()
         if self.vocoder_cache is not None:
             mel = torch.cat([self.vocoder_cache, mel], dim=-1)
-        self.vocoder_cache = mel[:, :, -self.vocoder_overlap:]
+        self.vocoder_cache = mel[:, :, -self.vocoder_overlap:].detach()
         mel = (mel + 1.0) / 2.0
 
         wav = self.vocoder.decode(mel).squeeze().detach().cpu().float().numpy()
@@ -386,23 +389,66 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if not bool(args.stream):
         # Offline: use MeanVC's reference inference path (full mel decode; best quality baseline).
-        from src.infer.infer_ref import extract_features_from_audio, inference  # type: ignore[import-not-found]
+        from src.infer.infer_ref import extract_features_from_audio  # type: ignore[import-not-found]
 
         _set_determinism(int(args.seed))
         t0 = time.time()
         bn, spk_emb, prompt_mel = extract_features_from_audio(
             args.src, args.ref, streamer.asr, streamer.sv, streamer.mel_extractor, str(device)
         )
-        _, wav_t, infer_sec = inference(
-            streamer.vc,
-            streamer.vocoder,
-            bn,
-            spk_emb,
-            prompt_mel,
-            chunk_size=int(streamer.vc_chunk),
-            steps=int(args.steps),
-            device=str(device),
-        )
+        infer_t0 = time.time()
+        # Re-implement MeanVC's `inference()` but decode with the CPU vocoder (CUDA TorchScript decode is unstable).
+        if int(args.steps) == 1:
+            timesteps = torch.tensor([1.0, 0.0], device=device)
+        elif int(args.steps) == 2:
+            timesteps = torch.tensor([1.0, 0.8, 0.0], device=device)
+        else:
+            timesteps = torch.linspace(1.0, 0.0, int(args.steps) + 1, device=device)
+
+        seq_len = int(bn.shape[1])
+        cache = None
+        kv_cache = None
+        offset = 0
+        x_pred = []
+        B = 1
+        chunk_size = int(streamer.vc_chunk)
+
+        for start in range(0, seq_len, chunk_size):
+            end = min(start + chunk_size, seq_len)
+            bn_chunk = bn[:, start:end]
+
+            x = torch.randn(B, bn_chunk.shape[1], 80, device=device, dtype=bn_chunk.dtype)
+            tmp_kv_cache = None
+            for i in range(int(args.steps)):
+                t = timesteps[i]
+                r = timesteps[i + 1]
+                t_tensor = torch.full((B,), float(t), device=device)
+                r_tensor = torch.full((B,), float(r), device=device)
+
+                u, tmp_kv_cache = streamer.vc(
+                    x,
+                    t_tensor,
+                    r_tensor,
+                    cache=cache,
+                    cond=bn_chunk,
+                    spks=spk_emb,
+                    prompts=prompt_mel,
+                    offset=offset,
+                    is_inference=True,
+                    kv_cache=kv_cache,
+                )
+                x = x - (float(t) - float(r)) * u
+
+            kv_cache = MeanVCStreamer._trim_kv_cache(tmp_kv_cache)
+            offset += int(x.shape[1])
+            cache = x
+            x_pred.append(x)
+
+        x_pred = torch.cat(x_pred, dim=1)
+        mel = x_pred.transpose(1, 2)
+        mel = (mel + 1.0) / 2.0
+        wav_t = streamer.vocoder.decode(mel.detach().cpu().float())
+        infer_sec = float(time.time() - infer_t0)
         total_sec = float(time.time() - t0)
         wav = wav_t.detach().cpu().float().numpy().reshape(-1)
         write_wav(args.out, wav, out_sr)
@@ -410,7 +456,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         dur = float(len(src_16k)) / float(sr)
         meta["stats"] = {
             "duration_sec": float(dur),
-            # `infer_sec` is model+vocoder time; `total_sec` includes feature extraction.
+            # `infer_sec` is VC+vocoder time (feature extraction excluded).
             "infer_sec": float(infer_sec),
             "total_sec": float(total_sec),
             "rtf_infer": float(float(infer_sec) / max(dur, 1e-6)),
