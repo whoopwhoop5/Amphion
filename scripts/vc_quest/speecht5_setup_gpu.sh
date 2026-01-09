@@ -39,7 +39,7 @@ python -m pip install -U pip setuptools wheel
 python -m pip install -U --index-url https://download.pytorch.org/whl/cu121 torch torchaudio torchvision
 
 # Minimal deps for our wrapper.
-python -m pip install -U numpy scipy soundfile librosa webrtcvad "transformers==4.41.2"
+python -m pip install -U numpy scipy soundfile librosa webrtcvad sentencepiece "transformers==4.41.2"
 
 export VC_MODEL VOCODER_MODEL SPEAKER_MODEL
 
@@ -69,4 +69,3 @@ print("[speecht5_setup] OK: models cached")
 PY
 
 echo "[speecht5_setup] Done. Activate with: source ${CONDA_SH} && conda activate ${ENV_NAME}"
-
