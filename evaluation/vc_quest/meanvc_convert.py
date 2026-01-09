@@ -35,6 +35,12 @@ def _add_sys_path_first(path: str) -> None:
     sys.path.insert(0, path)
 
 
+def _add_sys_paths_first(paths: list[str]) -> None:
+    # Insert in reverse so the first entry ends up at sys.path[0].
+    for p in reversed(paths):
+        _add_sys_path_first(p)
+
+
 def _set_determinism(seed: int) -> None:
     import torch
 
@@ -350,7 +356,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         raise FileNotFoundError(f"meanvc_dir not found: {meanvc_dir}")
 
     # Ensure MeanVC's top-level modules shadow Amphion packages with same names (e.g., `modules`).
-    _add_sys_path_first(meanvc_dir)
+    infer_dir = os.path.join(meanvc_dir, "src", "infer")
+    _add_sys_paths_first([infer_dir, meanvc_dir])
+    # If Amphion's `modules` package was imported earlier, evict it so MeanVC can import its own `modules.py`.
+    sys.modules.pop("modules", None)
 
     sr = 16000
     ref_16k = _load_audio_mono(args.ref, sr=sr)

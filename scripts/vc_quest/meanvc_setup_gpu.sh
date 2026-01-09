@@ -46,7 +46,8 @@ python -m pip install -U pip setuptools wheel
 python -m pip install -U --index-url https://download.pytorch.org/whl/cu121 torch torchaudio torchvision
 
 # Minimal deps for inference (skip pyaudio / wandb).
-python -m pip install -U numpy scipy soundfile librosa tqdm webrtcvad safetensors einops x-transformers omegaconf pyyaml transformers accelerate ema_pytorch jiwer huggingface_hub gdown
+# Note: MeanVC imports `matplotlib` from src/model/utils.py even for inference.
+python -m pip install -U numpy scipy soundfile librosa tqdm webrtcvad safetensors einops x-transformers omegaconf pyyaml transformers accelerate ema_pytorch jiwer huggingface_hub gdown matplotlib
 
 if [[ ! -d "${MEANVC_DIR}" ]]; then
   echo "[meanvc_setup] Cloning MeanVC to ${MEANVC_DIR}"
@@ -66,4 +67,3 @@ if [[ ! -f "${SV_DST_REL}" ]]; then
 fi
 
 echo "[meanvc_setup] Done. Activate with: source ${CONDA_SH} && conda activate ${ENV_NAME}"
-
