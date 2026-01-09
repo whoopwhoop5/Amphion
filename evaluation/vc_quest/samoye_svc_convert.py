@@ -555,6 +555,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         Path(tmp_ref_path).parent.mkdir(parents=True, exist_ok=True)
         sf.write(tmp_ref_path, ref_16k, 16000)
         spk_embed = spk_helper.forward([tmp_ref_path], infer=True).detach()
+        if models.fp16 and device.type == "cuda":
+            spk_embed = spk_embed.half()
         try:
             Path(tmp_ref_path).unlink(missing_ok=True)  # type: ignore[call-arg]
         except Exception:
