@@ -397,6 +397,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         waves_16k = waves_16k.reshape(1, -1)
         ori_inputs = whisper_feature_extractor(
             [waves_16k.squeeze(0).detach().cpu().numpy()],
+            sampling_rate=16000,
             return_tensors="pt",
             return_attention_mask=True,
         )
@@ -430,6 +431,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         "center": False,
     }
     to_mel = lambda x: mel_spectrogram(x, **mel_fn_args)  # noqa: E731
+
+    # Upstream uses tqdm inside each diffusion call; disable it to avoid massive logs during streaming.
+    try:
+        import modules.flow_matching as flow_matching  # type: ignore[import-not-found]
+
+        flow_matching.tqdm = lambda it, *args, **kwargs: it  # type: ignore[assignment]
+    except Exception:
+        pass
 
     # Audio I/O.
     ref_wav, ref_sr = _load_mono(args.ref)
