@@ -281,7 +281,20 @@ def main(argv: Optional[list[str]] = None) -> int:
         vocoder_name = str(vocoder_name)
         if vocoder_name == "bigvgan":
             try:
-                import bigvgan  # type: ignore[import-not-found]
+                import importlib
+                import sys
+
+                import f5_tts.infer.utils_infer as f5_utils  # type: ignore[import-not-found]
+
+                bigvgan_dir = Path(f5_utils.__file__).resolve().parents[2] / "third_party" / "BigVGAN"
+                # BigVGAN uses top-level imports like `from utils import ...`, which can collide with Amphion's
+                # `utils/` package when running from this repo. Ensure BigVGAN's directory is first on sys.path
+                # and evict any conflicting modules so BigVGAN resolves its local `utils.py`, `env.py`, etc.
+                sys.path.insert(0, str(bigvgan_dir))
+                for name in ("bigvgan", "utils", "env", "activations"):
+                    sys.modules.pop(name, None)
+
+                bigvgan = importlib.import_module("bigvgan")  # type: ignore[assignment]
             except Exception as exc:  # pragma: no cover - only hit if upstream layout changes
                 raise RuntimeError(
                     "Failed to import BigVGAN. Ensure EZ-VC submodules are initialized "
