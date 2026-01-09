@@ -198,10 +198,25 @@ Key constraints:
 
 ### 9) SaMoye-SVC (zero-shot singing VC)
 - Bead: `Amphion-ehh.11`
-- Status: open
+- Status: evaluated (reject)
 - Hypothesis: similar to YingMusic-SVC; evaluate speech viability + streaming stability.
-- Implementation: pending
-- Artifacts: `runs/vc_quest/samoye_svc/*` (pending)
+- Implementation: `evaluation/vc_quest/samoye_svc_convert.py` + `scripts/vc_quest/samoye_svc_*`
+- Setup notes:
+  - Checkpoints: `karl-wang/SaMoyeSVC` (`sovits_spk_1700h_0020.pt`, Whisper `large-v2.pt`, HuBERT-soft, speaker encoder).
+  - Model is VITS/SVC-style (Whisper PPG + HuBERT units + F0 + speaker embedding).
+  - Wrapper uses `pyworld` F0 (avoids missing `crepe` weights in upstream repo).
+
+- Results (RTX 4090, sr=32kHz, window=600ms, hop=300ms, crossfade=10ms, fp16, VAD=rms):
+  - Speed: mean window ≈ 0.073s => RTF ≈ 0.24 (very fast).
+  - Offline:
+    - `v5_to_fr_offline`: S-SIM≈0.836, WER≈0.799
+    - `fr_to_v5_offline`: S-SIM≈0.933, WER≈0.671
+  - Stream:
+    - `v5_to_fr_stream`:  S-SIM≈0.834, WER≈0.927
+    - `fr_to_v5_stream`:  S-SIM≈0.923, WER≈1.071
+  - Artifacts: `runs/vc_quest/samoye_svc/user_pair/*`
+
+- Conclusion: extremely fast with good speaker similarity on `fr_to_v5`, but content preservation is weak (high WER both offline and streaming) on our user pair; reject for real-time timbre VC.
 
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
