@@ -45,6 +45,9 @@ python -m pip install -U \
   munch==4.0.0 einops==0.8.0 hydra-core==1.3.2 pyyaml python-dotenv \
   accelerate huggingface-hub>=0.28.1 transformers==4.46.3 webrtcvad
 
+# Seed-VC imports `dac.*` from descript-audio-codec even for the xlsr-tiny preset.
+python -m pip install -U descript-audio-codec==1.0.0
+
 if [[ ! -d "${SEEDVC_DIR}" ]]; then
   echo "[seedvc_setup] Cloning seed-vc to ${SEEDVC_DIR}"
   git clone --depth 1 https://github.com/Plachtaa/seed-vc.git "${SEEDVC_DIR}"
@@ -77,4 +80,3 @@ print(f"[seedvc_setup] OK: {name}")
 PY
 
 echo "[seedvc_setup] Done. Activate with: source ${CONDA_SH} && conda activate ${ENV_NAME}"
-
