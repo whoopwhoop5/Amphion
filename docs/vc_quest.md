@@ -70,14 +70,25 @@ Key constraints:
 
 ### 3) MeanVC (streaming zero-shot VC)
 - Bead: `Amphion-ehh.5`
-- Status: in_progress
+- Status: evaluated (likely reject)
 - Hypothesis: purpose-built streaming zero-shot VC can hit <=200ms chunks with stable timing and strong timbre transfer.
 - Implementation: `evaluation/vc_quest/meanvc_convert.py` + `scripts/vc_quest/meanvc_*`
 - Setup notes:
   - Uses MeanVC repo under `~/deps/MeanVC` on GPU host (cloned by setup script).
   - Downloads inference checkpoints via HF model `ASLP-lab/MeanVC` (`download_ckpt.py`).
   - Downloads speaker verification checkpoint (`wavlm_large_finetune.pth`) via Google Drive using `gdown` (per MeanVC README).
-- Planned run: `runs/vc_quest/meanvc/user_pair/*`
+  - Important: `vocos.pt` TorchScript `.decode()` is unstable on CUDA in our environment (fails after repeated calls with `UNSUPPORTED DTYPE: complex`), so our wrapper runs vocoder decode on CPU (fast, ~10ms per 200ms chunk).
+- Artifacts: `runs/vc_quest/meanvc/user_pair/*`
+- Results (RTX 4090, steps=2, window=200ms, hop=200ms, fade=10ms, WebRTC VAD):
+  - Speed: `p95_window_sec≈0.050s` => `RTF_p95≈0.25` (real-time is easy).
+  - Quality (on our user pair) is **not competitive**:
+    - Offline:
+      - `v5_to_fr_offline`:  S-SIM≈0.718, WER≈0.935
+      - `fr_to_v5_offline`:  S-SIM≈0.909, WER≈1.000
+    - Stream:
+      - `v5_to_fr_stream_w200_h200`: S-SIM≈0.744, WER≈0.942, dropout≈0.084
+      - `fr_to_v5_stream_w200_h200`: S-SIM≈0.886, WER≈1.011, dropout≈0.043
+  - Conclusion: extremely low-latency but weak content preservation (high WER) and noticeable dropouts; likely reject.
 
 ### 4) Seed-VC (zero-shot VC)
 - Bead: `Amphion-ehh.6`
