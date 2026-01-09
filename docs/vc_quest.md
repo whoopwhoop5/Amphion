@@ -136,13 +136,23 @@ Key constraints:
 
 ### 6) SpeechT5 (seq2seq voice conversion)
 - Bead: `Amphion-ehh.8`
-- Status: in_progress
+- Status: evaluated (reject)
 - Hypothesis: strong content preservation (ASR-friendly) with decent timbre transfer via speaker embeddings; may be slower and may have length drift chunk-to-chunk because it is not designed for streaming.
 - Implementation: `evaluation/vc_quest/speecht5_convert.py` + `scripts/vc_quest/speecht5_*`
 - Notes:
   - Uses `microsoft/speecht5_vc` + `microsoft/speecht5_hifigan`.
   - Speaker conditioning uses WavLM x-vector (`microsoft/wavlm-base-plus-sv`) and L2-normalization (no extra `speechbrain` dependency).
   - Output is 16kHz; wrapper enforces fixed window/hop timing via length normalization + crossfade.
+- Artifacts: `runs/vc_quest/speecht5/user_pair/*`
+- Results (RTX 4090, window=600ms, hop=300ms, fade=10ms, VAD=WebRTC):
+  - Speed: `p95_window_sec≈1.55s` => `RTF_p95≈2.6` (not real-time).
+  - Offline (already bad):
+    - `v5_to_fr_offline`: S-SIM≈0.771, WER≈0.986, leak_p95≈-13.6dB, drop≈0.053
+    - `fr_to_v5_offline`: S-SIM≈0.687, WER≈2.57, leak_p95≈-16.1dB, drop≈0.081
+  - Stream (also bad):
+    - `v5_to_fr_stream`: S-SIM≈0.703, WER≈0.973, leak_p95≈-17.7dB, drop≈0.064
+    - `fr_to_v5_stream`: S-SIM≈0.505, WER≈1.00, leak_p95≈-20.9dB, drop≈0.045
+  - Conclusion: fails real-time budget and artifact gates (very loud silence leakage + dropouts) and does not preserve content; reject.
 
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
