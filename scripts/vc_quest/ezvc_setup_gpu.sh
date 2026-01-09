@@ -66,13 +66,14 @@ python -m pip install -e . || {
 echo "[ezvc_setup] Installing espnet fork (required for XEUS units)..."
 python -m pip install -U 'espnet @ git+https://github.com/wanchichen/espnet.git@ssl'
 
-echo "[ezvc_setup] Pre-downloading public dependencies (XEUS + BigVGAN vocoder weights)..."
+echo "[ezvc_setup] Pre-downloading public dependencies (XEUS)..."
 python - <<'PY'
 from huggingface_hub import hf_hub_download
 
 _ = hf_hub_download("espnet/xeus", filename="model/xeus_checkpoint_old.pth")
-_ = hf_hub_download("SPRINGLab/bigvgan_16khz", filename="pytorch_model.bin")
-print("[ezvc_setup] OK")
+print("[ezvc_setup] OK: espnet/xeus")
 PY
+
+echo "[ezvc_setup] NOTE: BigVGAN weights will be downloaded on first run via f5_tts."
 
 echo "[ezvc_setup] Done. Activate with: source ${CONDA_SH} && conda activate ${ENV_NAME}"
