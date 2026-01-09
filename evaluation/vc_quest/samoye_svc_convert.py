@@ -193,6 +193,14 @@ def _load_samoye_models(
         model.to(device)
         if fp16 and device.type == "cuda":
             model.half()
+            # SourceModuleHnNSF mixes float buffers with float activations. SineGen currently emits
+            # float32 even when the module is cast to fp16, so keep the merge weights in fp32 and
+            # cast the resulting harmonic source to fp16 in the wrapper.
+            try:
+                model.dec.m_source.merge_w = model.dec.m_source.merge_w.float()
+                model.dec.m_source.merge_b = model.dec.m_source.merge_b.float()
+            except Exception:
+                pass
 
         # Whisper PPG model (same as whisper_svc/inference.py, but loaded once).
         whisper_ckpt = torch.load(whisper_path, map_location="cpu")
@@ -364,12 +372,12 @@ def _infer_full(
     ppg_t = torch.from_numpy(ppg).to(device)
     vec_t = torch.from_numpy(vec).to(device)
     if model_set.fp16 and device.type == "cuda":
-        pit_t = pit_t.half()
         ppg_t = ppg_t.half()
         vec_t = vec_t.half()
 
     with torch.no_grad():
         source = model_set.model.pitch2source(pit_t.unsqueeze(0))
+        source = source.to(dtype=ppg_t.dtype)
 
     hop_frame = 10
     out_chunk = 2500  # frames (~25s at 10ms frame)
@@ -617,10 +625,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         import torch
 
         pit_t = torch.from_numpy(pit).to(device)
-        if models.fp16 and device.type == "cuda":
-            pit_t = pit_t.half()
         with torch.no_grad():
             har_source_full = models.model.pitch2source(pit_t.unsqueeze(0))
+            if models.fp16 and device.type == "cuda":
+                har_source_full = har_source_full.half()
 
         processed = 0
         window_count = 0
