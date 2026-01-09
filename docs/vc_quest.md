@@ -227,6 +227,25 @@ Key constraints:
 
 - Conclusion: extremely fast with good speaker similarity on `fr_to_v5`, but content preservation is weak (high WER both offline and streaming) on our user pair; reject for real-time timbre VC.
 
+### 10) FACodec (NaturalSpeech3, zero-shot VC via factorized codec)
+- Bead: `Amphion-6rv`
+- Status: evaluated (speed is excellent; quality mixed)
+- Hypothesis: codec-based decomposition should support short windows (<=600ms) with stable timing and very low RTF, potentially suitable for live calls.
+- Implementation: `evaluation/vc_quest/facodec_convert.py` + `scripts/vc_quest/facodec_run_user_pair_gpu.sh`
+- Setup notes:
+  - Uses HF checkpoints from `amphion/naturalspeech3_facodec` (`ns3_facodec_encoder_v2.bin`, `ns3_facodec_decoder_v2.bin`).
+  - Output is 16kHz; wrapper enforces fixed window/hop timing via length normalization + crossfade-prefix + peak limiter.
+- Results (RTX 4090, `use_residual=false`, window=600ms, hop=300ms, fade=10ms, VAD=WebRTC):
+  - Speed: `mean_window_sec≈0.052s` => `RTF_mean≈0.175` (very fast; comfortably real-time).
+  - Offline:
+    - `v5_to_fr_offline`: S-SIM≈0.932, WER≈0.913, leak_p95≈-47.2dB, drop≈0.0000
+    - `fr_to_v5_offline`: S-SIM≈0.956, WER≈0.420, leak_p95≈-44.8dB, drop≈0.0000
+  - Stream:
+    - `v5_to_fr_stream`:  S-SIM≈0.917, WER≈0.771, leak_p95≈-43.8dB, drop≈0.0000
+    - `fr_to_v5_stream`:  S-SIM≈0.959, WER≈0.457, leak_p95≈-45.9dB, drop≈0.0000
+- Artifacts: `runs/vc_quest/facodec/user_pair/*`
+- Conclusion: extremely fast + stable, but content preservation is inconsistent on our French user pair (one direction has very high WER). Worth a quick follow-up sweep (e.g., `use_residual=true`) to see if intelligibility improves, but not yet a clear winner over FreeVC.
+
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
   - If FreeVC v2 is acceptable: implement a minimal real-time FreeVC runner (mic->buffer->GPU inference->playback) using the selected window/hop.
