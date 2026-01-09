@@ -92,12 +92,31 @@ Key constraints:
 
 ### 4) Seed-VC (zero-shot VC)
 - Bead: `Amphion-ehh.6`
-- Status: open
+- Status: evaluated (likely reject for streaming)
 - Hypothesis: Seed-VC may provide strong any-to-any VC quality while supporting small streaming chunks.
+- Implementation: `evaluation/vc_quest/seedvc_convert.py` + `scripts/vc_quest/seedvc_*`
+- Setup notes:
+  - Uses Seed-VC repo under `~/deps/seed-vc` on GPU host (cloned by setup script).
+  - Uses the **realtime** V1 checkpoint/config by default (`DiT_uvit_tat_xlsr_ema.pth` + `config_dit_mel_seed_uvit_xlsr_tiny.yml`).
+  - Seed-VC’s `modules/` is a namespace package (no `__init__.py`) and collides with Amphion’s `modules/`; our wrapper removes Amphion repo-root from `sys.path` during Seed-VC imports.
+  - Requires `descript-audio-codec` (`dac.*`) even for the xlsr-tiny preset.
+- Artifacts: `runs/vc_quest/seedvc/user_pair/*`
+- Results (RTX 4090, sr=22.05kHz, steps=10, cfg=0.7, max_prompt=3s):
+  - Offline:
+    - `v5_to_fr_offline`:  S-SIM≈0.946, WER≈0.610, leak_p95≈-43.8dB, drop≈0.000
+    - `fr_to_v5_offline`:  S-SIM≈0.860, WER≈0.318, leak_p95≈-52.7dB, drop≈0.000
+  - Streaming (SOLA-style wrapper, VAD=rms @ -55dB, extra_ce=2.5s, extra=0.5s, right=0.02s, crossfade=40ms):
+    - `w300/h300`: p95_window≈0.136s => RTF_p95≈0.45
+      - `v5_to_fr_stream_w300_h300`: S-SIM≈0.926, WER≈0.470, leak_p95≈-18.6dB, drop≈0.048
+      - `fr_to_v5_stream_w300_h300`: S-SIM≈0.953, WER≈0.307, leak_p95≈-9.21dB, drop≈0.056
+    - `w600/h600`: p95_window≈0.139s => RTF_p95≈0.23
+      - `v5_to_fr_stream_w600_h600`: S-SIM≈0.928, WER≈0.671, leak_p95≈-23.9dB, drop≈0.072
+      - `fr_to_v5_stream_w600_h600`: S-SIM≈0.948, WER≈0.636, leak_p95≈-12.5dB, drop≈0.098
+  - Conclusion: offline quality is decent, but streaming has **very loud silence leakage** and **high voiced dropouts** vs our artifact gates; likely reject for real-time timbre VC unless we can drastically improve silence handling/alignment.
 
 - Next:
-  - Run MeanVC (offline + 200ms streaming-sim) on RTX 4090 and compare to FreeVC v2 and Vevo (WER/S-SIM + artifact gates).
-  - If MeanVC is promising, try a small param sweep (steps/VAD) and then move to Seed-VC.
+  - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
+  - If FreeVC v2 is acceptable: implement a minimal real-time FreeVC runner (mic->buffer->GPU inference->playback) using the selected window/hop.
 
 ## What we record for each candidate
 - **Streaming config:** sample rate, chunk/window, hop, crossfade/OLA, VAD settings, any lookahead.
