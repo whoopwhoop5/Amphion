@@ -381,6 +381,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     vocoder_fn = bigvgan.BigVGAN.from_pretrained(str(model_params.vocoder.name), use_cuda_kernel=False)
     vocoder_fn.remove_weight_norm()
     vocoder_fn = vocoder_fn.eval().to(device)
+    for p in vocoder_fn.parameters():
+        p.requires_grad_(False)
 
     # Semantic encoder (Whisper).
     if str(model_params.speech_tokenizer.type) != "whisper":
@@ -536,7 +538,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                 style_r=cat_style_cond,
             )
             vc_target = vc_target[:, :, mel_ref.size(-1) :]
-        wave = vocoder_fn(vc_target.float()).squeeze().detach().cpu().float().numpy().reshape(-1)
+        with torch.no_grad():
+            wave = vocoder_fn(vc_target.float()).squeeze().detach().cpu().float().numpy().reshape(-1)
         timings.append(time.time() - t0)
         sf.write(args.out, wave, sr)
     else:
@@ -631,7 +634,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                         style_r=cat_style_cond,
                     )
                     vc_target = vc_target[:, :, mel_ref.size(-1) :]
-                wave_t = vocoder_fn(vc_target.float()).squeeze()
+                with torch.no_grad():
+                    wave_t = vocoder_fn(vc_target.float()).squeeze()
                 _torch_sync(device)
                 timings.append(time.time() - t0)
                 chunk_wave = wave_t.detach().cpu().float().numpy().reshape(-1).astype(np.float32, copy=False)
