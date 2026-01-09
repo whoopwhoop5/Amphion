@@ -66,13 +66,14 @@ fi
 
 echo "[samoye_setup] Downloading checkpoints from HF (karl-wang/SaMoyeSVC)..."
 python - <<'PY'
-import os
 from pathlib import Path
 from huggingface_hub import hf_hub_download
 
 repo_id = "karl-wang/SaMoyeSVC"
 base = Path.home() / "deps" / "SaMoye-SVC" / "SaMoye-Model"
-cache_dir = Path(os.environ.get("HF_HOME", str(Path.home() / ".hf_home"))).resolve()
+# Vast images often set HF_HOME to /workspace (20GB) which can fill up quickly.
+# Use a cache on the main overlay disk instead.
+cache_dir = (Path.home() / ".hf_home").resolve()
 cache_dir.mkdir(parents=True, exist_ok=True)
 
 def dl(filename: str, subdir: str) -> None:
