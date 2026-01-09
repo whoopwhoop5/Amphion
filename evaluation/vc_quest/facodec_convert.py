@@ -188,7 +188,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     # hop=200 configuration (encoder out_channels=256, decoder vq_dim=256). Explicitly set
     # these to avoid silent shape mismatches when upstream defaults change.
     encoder = FACodecEncoderV2(out_channels=256).to(device)
-    decoder = FACodecDecoderV2(in_channels=256, vq_dim=256, upsample_initial_channel=1024).to(device)
+    decoder = FACodecDecoderV2(
+        in_channels=256,
+        vq_dim=256,
+        upsample_initial_channel=1024,
+        # The released decoder checkpoint includes these auxiliary heads (trained with gradient reversal).
+        # They are not used for inference in this wrapper, but must be instantiated for strict loading.
+        use_gr_residual_f0=True,
+        use_gr_residual_phone=True,
+        use_gr_x_timbre=True,
+    ).to(device)
     encoder.load_state_dict(torch.load(enc_ckpt, map_location="cpu", weights_only=True))
     decoder.load_state_dict(torch.load(dec_ckpt, map_location="cpu", weights_only=True))
     encoder.eval()
