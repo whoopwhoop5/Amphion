@@ -156,15 +156,24 @@ Key constraints:
 
 ### 7) EZ-VC (F5-TTS based, zero-shot any-to-any VC)
 - Bead: `Amphion-ehh.9`
-- Status: in_progress (blocked on gated weights)
+- Status: evaluated (reject)
 - Hypothesis: unit-based non-autoregressive generation may preserve content better than “tone color” systems while still supporting <=600ms streaming via wrapper-level timing normalization.
 - Implementation: `evaluation/vc_quest/ezvc_convert.py` + `scripts/vc_quest/ezvc_*`
 - Setup notes:
   - Uses upstream repo `EZ-VC/EZ-VC` as a package (`f5_tts`) + an espnet fork for XEUS unit extraction.
   - **Model weights are gated on HF** (`SPRINGLab/EZ-VC`), so the GPU host must be authenticated once via `huggingface-cli login`.
-- Planned evaluation (RTX 4090):
-  - Offline + stream-sim with `window_ms=600, hop_ms=300, fade_ms=10` and `nfe_step` sweep to test real-time feasibility.
-- Artifacts: `runs/vc_quest/ezvc/user_pair/*` (pending)
+  - BigVGAN vocoder import collides with Amphion's `utils/` package; wrapper forces BigVGAN directory to the front of `sys.path` so `from utils import ...` resolves correctly.
+  - Vocos fallback is not compatible with EZ-VC's mel config (expects 100 mel channels vs model's 80), so we use BigVGAN (`SPRINGLab/bigvgan_16khz`).
+- Results (RTX 4090, `nfe_step=12, cfg=2.0, sway=-1.0`, stream `window=600ms, hop=300ms, fade=10ms`, VAD=WebRTC):
+  - Speed: `mean_window_sec≈0.43s` (=> not realtime at `hop=300ms`; would fit at `hop=600ms`).
+  - Offline:
+    - `v5_to_fr_offline`: S-SIM≈0.958, WER≈0.955, leak_p95≈-37.9dB, drop≈0.0566
+    - `fr_to_v5_offline`: S-SIM≈0.900, WER≈0.623, leak_p95≈-8.1dB, drop≈0.0541
+  - Stream:
+    - `v5_to_fr_stream`:  S-SIM≈0.963, WER≈0.856, leak_p95≈-28.2dB, drop≈0.0220
+    - `fr_to_v5_stream`:  S-SIM≈0.912, WER≈0.826, leak_p95≈-6.8dB, drop≈0.0109
+- Artifacts: `runs/vc_quest/ezvc/user_pair/*`
+- Conclusion: high speaker similarity, but content preservation is very weak (high WER) and silence leakage can be extremely loud (p95 near -6dB); reject for real-time voice calls.
 
 ### 8) YingMusic-SVC (zero-shot singing VC)
 - Bead: `Amphion-ehh.10`
