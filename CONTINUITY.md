@@ -68,9 +68,11 @@
   - Evaluated SaMoye-SVC on RTX 4090: very fast (mean window≈0.073s) but weak content preservation (high WER) offline+stream; reject. Artifacts in `runs/vc_quest/samoye_svc/user_pair/*`.
 - VC quest (2026-01-09):
   - Evaluated EZ-VC (BigVGAN) on RTX 4090: high speaker similarity but very high WER and loud silence leakage; reject. Artifacts in `runs/vc_quest/ezvc/user_pair/*` and summary in `docs/vc_quest.md`.
-- Now: VC quest: pick a low-latency timbre VC candidate for live calls (FreeVC vs YingMusic-SVC vs Vevo baseline), then build a minimal real-time runner for the winner.
+- VC quest (2026-01-09):
+  - Evaluated FACodec (NaturalSpeech3) on RTX 4090: extremely fast and stable (RTF_mean≈0.18 @ w600/h300) but intelligibility is inconsistent on our French user pair; keep as a secondary candidate. Artifacts in `runs/vc_quest/facodec/user_pair/*` and summary in `docs/vc_quest.md`.
+- Now: VC quest: pick a low-latency timbre VC candidate for live calls (FreeVC vs YingMusic-SVC vs FACodec vs Vevo baseline), then build a minimal real-time runner for the winner.
 - Next:
-  - Have user listen to VC quest artifacts for FreeVC (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`), YingMusic (`runs/vc_quest/yingmusic_svc/user_pair_w600_h300_s10/*`), and Vevo baseline to reconcile metrics vs perception.
+  - Have user listen to VC quest artifacts for FreeVC (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`), YingMusic (`runs/vc_quest/yingmusic_svc/user_pair_w600_h300_s10/*`), FACodec (`runs/vc_quest/facodec/user_pair/*`), and Vevo baseline to reconcile metrics vs perception.
   - Implement a minimal real-time runner for the best timbre-VC model (start with FreeVC if no clear winner).
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
