@@ -6,6 +6,9 @@ set -euo pipefail
 # - HF weights for the EZ-VC model are gated (SPRINGLab/EZ-VC). You must run:
 #     huggingface-cli login
 #   once on the GPU host before downloads will work.
+#
+# - Vast images often set HF_HOME to /workspace (20GB) which can fill up quickly. Use a cache
+#   location on the main overlay disk instead.
 
 MINIFORGE_ROOT="/opt/miniforge3"
 CONDA_BIN="${MINIFORGE_ROOT}/bin/conda"
@@ -28,6 +31,10 @@ if [[ ! -f "${CONDA_SH}" ]]; then
 fi
 
 source "${CONDA_SH}"
+
+# Keep HF caches off /workspace to avoid disk-full failures.
+export HF_HOME="${HF_HOME:-/root/.hf_home}"
+mkdir -p "${HF_HOME}"
 
 if ! "${CONDA_BIN}" env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
   echo "[ezvc_setup] Creating conda env ${ENV_NAME} (python=3.10)"
