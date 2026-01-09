@@ -66,18 +66,27 @@ fi
 
 echo "[samoye_setup] Downloading checkpoints from HF (karl-wang/SaMoyeSVC)..."
 python - <<'PY'
+import os
 from pathlib import Path
 from huggingface_hub import hf_hub_download
 
 repo_id = "karl-wang/SaMoyeSVC"
 base = Path.home() / "deps" / "SaMoye-SVC" / "SaMoye-Model"
+cache_dir = Path(os.environ.get("HF_HOME", str(Path.home() / ".hf_home"))).resolve()
+cache_dir.mkdir(parents=True, exist_ok=True)
 
 def dl(filename: str, subdir: str) -> None:
-    p = hf_hub_download(repo_id, filename=filename)
-    dst = base / subdir
+    p = hf_hub_download(repo_id, filename=filename, cache_dir=str(cache_dir))
+    dst = (base / subdir).resolve()
     dst.mkdir(parents=True, exist_ok=True)
     out = dst / Path(filename).name
-    out.write_bytes(Path(p).read_bytes())
+    if out.exists():
+        print(f"[samoye_setup] exists: {out}")
+        return
+    try:
+        out.symlink_to(Path(p))
+    except Exception:
+        out.write_bytes(Path(p).read_bytes())
     print(f"[samoye_setup] {filename} -> {out}")
 
 # Main model checkpoint (placed at SaMoye-Model root by upstream instructions).
@@ -92,4 +101,3 @@ print("[samoye_setup] OK")
 PY
 
 echo "[samoye_setup] Done. Activate with: source ${CONDA_SH} && conda activate ${ENV_NAME}"
-
