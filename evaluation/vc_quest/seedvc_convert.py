@@ -46,6 +46,11 @@ def _purge_import_cache(prefix: str) -> None:
             del sys.modules[name]
 
 
+def _remove_sys_path_entry(path: str) -> None:
+    while path in sys.path:
+        sys.path.remove(path)
+
+
 @contextlib.contextmanager
 def _pushd(path: str):
     prev = os.getcwd()
@@ -169,6 +174,14 @@ def _load_seedvc_models(
 ) -> SeedVCModelSet:
     import torch
     import yaml
+
+    # IMPORTANT: Seed-VC's `modules/` has no `__init__.py` (namespace package), while Amphion's
+    # `modules/` is a regular package. If Amphion's repo root is on sys.path (often via ""),
+    # Python can resolve `modules.*` to Amphion even if we prepend Seed-VC. Remove Amphion's
+    # repo root from sys.path to make Seed-VC imports unambiguous.
+    amphion_root = str(Path(__file__).resolve().parents[2])
+    _remove_sys_path_entry("")
+    _remove_sys_path_entry(amphion_root)
 
     _add_sys_path_first(seedvc_dir)
     _purge_import_cache("modules")
