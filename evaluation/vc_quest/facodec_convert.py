@@ -184,8 +184,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     enc_ckpt = hf_hub_download(repo_id=hf_repo, filename="ns3_facodec_encoder_v2.bin")
     dec_ckpt = hf_hub_download(repo_id=hf_repo, filename="ns3_facodec_decoder_v2.bin")
 
-    encoder = FACodecEncoderV2().to(device)
-    decoder = FACodecDecoderV2().to(device)
+    # The HF checkpoints shipped by `amphion/naturalspeech3_facodec` correspond to the 16kHz
+    # hop=200 configuration (encoder out_channels=256, decoder vq_dim=256). Explicitly set
+    # these to avoid silent shape mismatches when upstream defaults change.
+    encoder = FACodecEncoderV2(out_channels=256).to(device)
+    decoder = FACodecDecoderV2(in_channels=256, vq_dim=256, upsample_initial_channel=1024).to(device)
     encoder.load_state_dict(torch.load(enc_ckpt, map_location="cpu", weights_only=True))
     decoder.load_state_dict(torch.load(dec_ckpt, map_location="cpu", weights_only=True))
     encoder.eval()
@@ -384,4 +387,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
