@@ -134,6 +134,16 @@ Key constraints:
     - `fr_to_v5_stream`: S-SIM≈0.977, WER≈0.870, leak_p95≈-39.0dB, drop≈0.0008
   - Conclusion: extremely fast and high speaker similarity, but weak content preservation (high WER) and occasional streaming dropouts; likely reject for our use case.
 
+### 6) SpeechT5 (seq2seq voice conversion)
+- Bead: `Amphion-ehh.8`
+- Status: in_progress
+- Hypothesis: strong content preservation (ASR-friendly) with decent timbre transfer via speaker embeddings; may be slower and may have length drift chunk-to-chunk because it is not designed for streaming.
+- Implementation: `evaluation/vc_quest/speecht5_convert.py` + `scripts/vc_quest/speecht5_*`
+- Notes:
+  - Uses `microsoft/speecht5_vc` + `microsoft/speecht5_hifigan`.
+  - Speaker conditioning uses WavLM x-vector (`microsoft/wavlm-base-plus-sv`) and L2-normalization (no extra `speechbrain` dependency).
+  - Output is 16kHz; wrapper enforces fixed window/hop timing via length normalization + crossfade.
+
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
   - If FreeVC v2 is acceptable: implement a minimal real-time FreeVC runner (mic->buffer->GPU inference->playback) using the selected window/hop.
