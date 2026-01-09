@@ -34,8 +34,8 @@ STREAM_FADE_MS="${STREAM_FADE_MS:-10}"
 source "${CONDA_SH}"
 conda activate "${ENV_NAME}"
 
-# Keep HF token + caches off /workspace to avoid disk-full failures.
-export HF_HOME="${HF_HOME:-/root/.hf_home}"
+# Keep HF token + caches off /workspace to avoid disk-full failures (and to use the login token).
+export HF_HOME="/root/.hf_home"
 mkdir -p "${HF_HOME}"
 
 echo "[ezvc_run] model_repo=${MODEL_REPO} vocoder=${VOCODER_NAME} nfe=${NFE_STEP} cfg=${CFG_STRENGTH} sway=${SWAY_SAMPLING_COEF}"

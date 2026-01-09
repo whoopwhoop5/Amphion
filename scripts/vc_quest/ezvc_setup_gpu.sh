@@ -32,8 +32,8 @@ fi
 
 source "${CONDA_SH}"
 
-# Keep HF caches off /workspace to avoid disk-full failures.
-export HF_HOME="${HF_HOME:-/root/.hf_home}"
+# Keep HF caches off /workspace to avoid disk-full failures (and to use the login token).
+export HF_HOME="/root/.hf_home"
 mkdir -p "${HF_HOME}"
 
 if ! "${CONDA_BIN}" env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
