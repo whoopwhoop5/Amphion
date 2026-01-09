@@ -168,10 +168,33 @@ Key constraints:
 
 ### 8) YingMusic-SVC (zero-shot singing VC)
 - Bead: `Amphion-ehh.10`
-- Status: open
+- Status: evaluated (promising, but borderline realtime)
 - Hypothesis: may transfer timbre well, but as a singing-focused model it may struggle on speech; we still evaluate as a candidate.
-- Implementation: pending
-- Artifacts: `runs/vc_quest/yingmusic_svc/*` (pending)
+- Implementation: `evaluation/vc_quest/yingmusic_svc_convert.py` + `scripts/vc_quest/yingmusic_svc_*`
+- Setup notes:
+  - Checkpoint: `GiantAILab/YingMusic-SVC` (`YingMusic-SVC-full.pt`).
+  - Uses Whisper semantic encoder + RMVPE F0 + CAMPPlus speaker embedding + BigVGAN vocoder (44.1kHz output).
+  - Name collision: YingMusic-SVC uses a top-level `modules/` package; wrapper temporarily removes Amphion root from `sys.path` during imports.
+
+- Baseline results (RTX 4090, window=600ms, hop=300ms, steps=20, cfg_rate=0.7, fp16):
+  - Speed: mean window ≈ 0.48s => RTF ≈ 1.6 (not realtime at hop=300ms).
+  - Offline:
+    - `v5_to_fr_offline`: S-SIM≈0.952, WER≈0.616
+    - `fr_to_v5_offline`: S-SIM≈0.745, WER≈0.364
+  - Stream:
+    - `v5_to_fr_stream`:  S-SIM≈0.944, WER≈0.640
+    - `fr_to_v5_stream`:  S-SIM≈0.881, WER≈0.386
+  - Artifacts: `runs/vc_quest/yingmusic_svc/user_pair/*`
+
+- Tuned for realtime (RTX 4090, window=600ms, hop=300ms, steps=10, cfg_rate=0.7, fp16):
+  - Speed: mean window ≈ 0.29s => RTF ≈ 0.97 (barely realtime).
+  - Stream:
+    - `v5_to_fr_stream`:  S-SIM≈0.943, WER≈0.494
+    - `fr_to_v5_stream`:  S-SIM≈0.872, WER≈0.443
+  - Note: `fr_to_v5_offline` shows non-trivial clipping (`clip_frac≈0.0018`), so listening review is required.
+  - Artifacts: `runs/vc_quest/yingmusic_svc/user_pair_w600_h300_s10/*`
+
+- Conclusion: with reduced diffusion steps, YingMusic-SVC can (barely) meet 300ms-hop realtime on RTX 4090 and has competitive objective metrics on our user pair; keep as a candidate pending listening + more robustness testing (it is still a singing-focused model).
 
 ### 9) SaMoye-SVC (zero-shot singing VC)
 - Bead: `Amphion-ehh.11`
