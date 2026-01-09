@@ -36,6 +36,11 @@ STREAM_HOP_MS="${STREAM_HOP_MS:-300}"
 source "${CONDA_SH}"
 conda activate "${ENV_NAME}"
 
+FP16_FLAG="--fp16"
+if [[ "${FP16}" == "false" ]]; then
+  FP16_FLAG="--no-fp16"
+fi
+
 echo "[ymsvc_run] ckpt=${CHECKPOINT_REPO}/${CHECKPOINT_FILENAME} steps=${DIFFUSION_STEPS} cfg=${INFERENCE_CFG_RATE} fp16=${FP16}"
 echo "[ymsvc_run] Streaming: window=${STREAM_WINDOW_MS}ms hop=${STREAM_HOP_MS}ms seed=${SEED}"
 
@@ -45,7 +50,7 @@ python -m evaluation.vc_quest.yingmusic_svc_convert \
   --checkpoint_filename "${CHECKPOINT_FILENAME}" \
   --device cuda:0 \
   --seed "${SEED}" \
-  --fp16="${FP16}" \
+  ${FP16_FLAG} \
   --ref_max_sec "${REF_MAX_SEC}" \
   --diffusion_steps "${DIFFUSION_STEPS}" \
   --inference_cfg_rate "${INFERENCE_CFG_RATE}" \
@@ -61,7 +66,7 @@ python -m evaluation.vc_quest.yingmusic_svc_convert \
   --checkpoint_filename "${CHECKPOINT_FILENAME}" \
   --device cuda:0 \
   --seed "${SEED}" \
-  --fp16="${FP16}" \
+  ${FP16_FLAG} \
   --ref_max_sec "${REF_MAX_SEC}" \
   --diffusion_steps "${DIFFUSION_STEPS}" \
   --inference_cfg_rate "${INFERENCE_CFG_RATE}" \
@@ -77,7 +82,7 @@ python -m evaluation.vc_quest.yingmusic_svc_convert \
   --checkpoint_filename "${CHECKPOINT_FILENAME}" \
   --device cuda:0 \
   --seed "${SEED}" \
-  --fp16="${FP16}" \
+  ${FP16_FLAG} \
   --ref_max_sec "${REF_MAX_SEC}" \
   --diffusion_steps "${DIFFUSION_STEPS}" \
   --inference_cfg_rate "${INFERENCE_CFG_RATE}" \
@@ -96,7 +101,7 @@ python -m evaluation.vc_quest.yingmusic_svc_convert \
   --checkpoint_filename "${CHECKPOINT_FILENAME}" \
   --device cuda:0 \
   --seed "${SEED}" \
-  --fp16="${FP16}" \
+  ${FP16_FLAG} \
   --ref_max_sec "${REF_MAX_SEC}" \
   --diffusion_steps "${DIFFUSION_STEPS}" \
   --inference_cfg_rate "${INFERENCE_CFG_RATE}" \
@@ -141,4 +146,3 @@ python -m evaluation.vc_quest.score_outputs \
   --out_json "${RUN_DIR}/fr_to_v5_stream.report.json"
 
 echo "[ymsvc_run] Wrote artifacts to ${RUN_DIR}"
-
