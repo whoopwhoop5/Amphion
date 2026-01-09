@@ -47,6 +47,11 @@ def _purge_import_cache(prefix: str) -> None:
             del sys.modules[name]
 
 
+def _remove_sys_path_entry(path: str) -> None:
+    while path in sys.path:
+        sys.path.remove(path)
+
+
 def _set_determinism(seed: int) -> None:
     seed = int(seed)
     np.random.seed(seed % (2**32 - 1))
@@ -299,16 +304,27 @@ def main(argv: Optional[list[str]] = None) -> int:
     _purge_import_cache("modules")
 
     # Import YingMusic-SVC modules after sys.path swap.
-    import yaml
-    from huggingface_hub import hf_hub_download
+    # `modules` is an implicit namespace package in YingMusic-SVC (no __init__.py), but Amphion's own
+    # `modules/` is a regular package. Python will prefer the regular package unless we temporarily
+    # remove Amphion from sys.path for the import.
+    saved_sys_path = list(sys.path)
+    try:
+        amphion_root = str(Path(__file__).resolve().parents[2])
+        _remove_sys_path_entry("")
+        _remove_sys_path_entry(amphion_root)
 
-    from modules.commons import build_model, load_checkpoint, recursive_munch  # type: ignore[import-not-found]
-    from modules.rmvpe import RMVPE  # type: ignore[import-not-found]
+        import yaml
+        from huggingface_hub import hf_hub_download
 
-    from modules.campplus.DTDNN import CAMPPlus  # type: ignore[import-not-found]
-    from modules.audio import mel_spectrogram  # type: ignore[import-not-found]
+        from modules.commons import build_model, load_checkpoint, recursive_munch  # type: ignore[import-not-found]
+        from modules.rmvpe import RMVPE  # type: ignore[import-not-found]
 
-    from transformers import AutoFeatureExtractor, WhisperModel  # type: ignore[import-not-found]
+        from modules.campplus.DTDNN import CAMPPlus  # type: ignore[import-not-found]
+        from modules.audio import mel_spectrogram  # type: ignore[import-not-found]
+
+        from transformers import AutoFeatureExtractor, WhisperModel  # type: ignore[import-not-found]
+    finally:
+        sys.path = saved_sys_path
 
     # Resolve config/checkpoint.
     config_path = (
