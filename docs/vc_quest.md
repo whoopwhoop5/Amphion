@@ -68,9 +68,25 @@ Key constraints:
     - **Best by speaker/noise:** `window_ms=800, hop_ms=400` (mean_WER≈0.594, min_S-SIM≈0.875, leak_p95≈-32.2dB, drop≈0.003, RTF_p95≈0.174)
   - Observation: WebRTC VAD + crossfade reduces silence noise substantially and improves `fr_to_v5` content vs v1; some configs still produce loud silence leakage (e.g. `w600_h400`), so selection must gate on artifacts.
 
+### 3) MeanVC (streaming zero-shot VC)
+- Bead: `Amphion-ehh.5`
+- Status: in_progress
+- Hypothesis: purpose-built streaming zero-shot VC can hit <=200ms chunks with stable timing and strong timbre transfer.
+- Implementation: `evaluation/vc_quest/meanvc_convert.py` + `scripts/vc_quest/meanvc_*`
+- Setup notes:
+  - Uses MeanVC repo under `~/deps/MeanVC` on GPU host (cloned by setup script).
+  - Downloads inference checkpoints via HF model `ASLP-lab/MeanVC` (`download_ckpt.py`).
+  - Downloads speaker verification checkpoint (`wavlm_large_finetune.pth`) via Google Drive using `gdown` (per MeanVC README).
+- Planned run: `runs/vc_quest/meanvc/user_pair/*`
+
+### 4) Seed-VC (zero-shot VC)
+- Bead: `Amphion-ehh.6`
+- Status: open
+- Hypothesis: Seed-VC may provide strong any-to-any VC quality while supporting small streaming chunks.
+
 - Next:
-  - Listen to the v2 top candidates (`w800_h200` vs `w800_h400`) and decide whether FreeVC meets our real-time quality bar.
-  - If not, move to the next VC candidate (likely target-trained real-time VC) while keeping Vevo as the high-quality baseline.
+  - Run MeanVC (offline + 200ms streaming-sim) on RTX 4090 and compare to FreeVC v2 and Vevo (WER/S-SIM + artifact gates).
+  - If MeanVC is promising, try a small param sweep (steps/VAD) and then move to Seed-VC.
 
 ## What we record for each candidate
 - **Streaming config:** sample rate, chunk/window, hop, crossfade/OLA, VAD settings, any lookahead.
