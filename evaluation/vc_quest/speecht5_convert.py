@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -91,6 +92,47 @@ def _trim_ref(wav: np.ndarray, *, sample_rate: int, top_db: float) -> np.ndarray
     return np.asarray(trimmed, dtype=np.float32).reshape(-1)
 
 
+def _ensure_sinusoidal_pos_encoding_len(
+    module,
+    *,
+    min_len: int,
+) -> None:
+    """Work around SpeechT5 max-length positional encoding limits.
+
+    Some SpeechT5 checkpoints ship with a relatively small sinusoidal buffer which can
+    cause `generate_speech()` to crash for longer sequences (off-by-one at the boundary).
+    """
+
+    if min_len <= 0:
+        return
+    pe = getattr(module, "pe", None)
+    dim = int(getattr(module, "dim", 0))
+    if pe is None or dim <= 0:
+        return
+    if pe.ndim != 3 or pe.shape[0] != 1:
+        return
+
+    cur_len = int(pe.shape[1])
+    if cur_len >= int(min_len):
+        return
+
+    device = pe.device
+    dtype = pe.dtype
+    max_len = int(min_len)
+
+    new_pe = torch.zeros((max_len, dim), device=device, dtype=dtype)
+    position = torch.arange(0, max_len, device=device, dtype=torch.float32).unsqueeze(1)
+    div_term = torch.exp(
+        (torch.arange(0, dim, 2, device=device, dtype=torch.float32) * -(math.log(10000.0) / dim))
+    )
+    new_pe[:, 0::2] = torch.sin(position * div_term)
+    new_pe[:, 1::2] = torch.cos(position * div_term)
+    new_pe = new_pe.unsqueeze(0).to(dtype)
+
+    # `pe` is a (non-persistent) registered buffer in transformers; overwriting is OK.
+    module.pe = new_pe
+
+
 @torch.no_grad()
 def _speaker_embedding_wavlm_xvector(
     *,
@@ -150,6 +192,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--meta_json", type=str, default="", help="Optional JSON path to write run metadata")
 
     parser.add_argument("--ref_trim_db", type=float, default=20.0, help="librosa.effects.trim top_db for reference")
+    parser.add_argument(
+        "--pos_max_len",
+        type=int,
+        default=20000,
+        help="Ensure SpeechT5 sinusoidal positional encoding buffer is at least this long (workaround).",
+    )
 
     parser.add_argument("--stream", action="store_true", help="Run window/hop streaming simulation.")
     parser.add_argument("--window_ms", type=int, default=600)
@@ -191,6 +239,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     processor = SpeechT5Processor.from_pretrained(str(args.vc_model))
     model = SpeechT5ForSpeechToSpeech.from_pretrained(str(args.vc_model)).to(device).eval()
     vocoder = SpeechT5HifiGan.from_pretrained(str(args.vocoder_model)).to(device).eval()
+
+    try:
+        _ensure_sinusoidal_pos_encoding_len(
+            model.speecht5.decoder.prenet.pos_sinusoidal_embed,
+            min_len=int(args.pos_max_len),
+        )
+    except Exception:
+        # Best-effort: the underlying API may differ across transformer versions/checkpoints.
+        pass
 
     spk_fe = AutoFeatureExtractor.from_pretrained(str(args.speaker_model))
     spk_model = WavLMForXVector.from_pretrained(str(args.speaker_model)).to(device).eval()
@@ -389,4 +446,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
