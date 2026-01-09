@@ -154,6 +154,32 @@ Key constraints:
     - `fr_to_v5_stream`: S-SIM≈0.505, WER≈1.00, leak_p95≈-20.9dB, drop≈0.045
   - Conclusion: fails real-time budget and artifact gates (very loud silence leakage + dropouts) and does not preserve content; reject.
 
+### 7) EZ-VC (F5-TTS based, zero-shot any-to-any VC)
+- Bead: `Amphion-ehh.9`
+- Status: in_progress (blocked on gated weights)
+- Hypothesis: unit-based non-autoregressive generation may preserve content better than “tone color” systems while still supporting <=600ms streaming via wrapper-level timing normalization.
+- Implementation: `evaluation/vc_quest/ezvc_convert.py` + `scripts/vc_quest/ezvc_*`
+- Setup notes:
+  - Uses upstream repo `EZ-VC/EZ-VC` as a package (`f5_tts`) + an espnet fork for XEUS unit extraction.
+  - **Model weights are gated on HF** (`SPRINGLab/EZ-VC`), so the GPU host must be authenticated once via `huggingface-cli login`.
+- Planned evaluation (RTX 4090):
+  - Offline + stream-sim with `window_ms=600, hop_ms=300, fade_ms=10` and `nfe_step` sweep to test real-time feasibility.
+- Artifacts: `runs/vc_quest/ezvc/user_pair/*` (pending)
+
+### 8) YingMusic-SVC (zero-shot singing VC)
+- Bead: `Amphion-ehh.10`
+- Status: open
+- Hypothesis: may transfer timbre well, but as a singing-focused model it may struggle on speech; we still evaluate as a candidate.
+- Implementation: pending
+- Artifacts: `runs/vc_quest/yingmusic_svc/*` (pending)
+
+### 9) SaMoye-SVC (zero-shot singing VC)
+- Bead: `Amphion-ehh.11`
+- Status: open
+- Hypothesis: similar to YingMusic-SVC; evaluate speech viability + streaming stability.
+- Implementation: pending
+- Artifacts: `runs/vc_quest/samoye_svc/*` (pending)
+
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
   - If FreeVC v2 is acceptable: implement a minimal real-time FreeVC runner (mic->buffer->GPU inference->playback) using the selected window/hop.
