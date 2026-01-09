@@ -114,6 +114,16 @@ Key constraints:
       - `fr_to_v5_stream_w600_h600`: S-SIM≈0.948, WER≈0.636, leak_p95≈-12.5dB, drop≈0.098
   - Conclusion: offline quality is decent, but streaming has **very loud silence leakage** and **high voiced dropouts** vs our artifact gates; likely reject for real-time timbre VC unless we can drastically improve silence handling/alignment.
 
+### 5) kNN-VC (nearest-neighbor VC)
+- Bead: `Amphion-ehh.7`
+- Status: in_progress
+- Hypothesis: kNN-VC can be streamed with small windows (<=600ms); main costs are WavLM feature extraction + kNN search + HiFiGAN.
+- Implementation: `evaluation/vc_quest/knnvc_convert.py` + `scripts/vc_quest/knnvc_*`
+- Notes:
+  - Requires ~16kHz I/O; output is 16kHz.
+  - Quality usually improves with more reference speech; we start with our 10s reference clips.
+  - Wrapper default disables per-window loudness normalization (`tgt_loudness_db=none`) to avoid gain pumping; we rely on our artifact gates + peak limiter.
+
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
   - If FreeVC v2 is acceptable: implement a minimal real-time FreeVC runner (mic->buffer->GPU inference->playback) using the selected window/hop.
