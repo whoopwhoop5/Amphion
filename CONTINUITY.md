@@ -62,11 +62,17 @@
   - Evaluated kNN-VC (bshall/knn-vc) on RTX 4090: extremely fast and high speaker similarity, but poor content preservation (high WER) and occasional streaming dropouts; likely reject. Artifacts in `runs/vc_quest/knnvc/user_pair/*` and summary in `docs/vc_quest.md`.
 - VC quest (2026-01-09):
   - Evaluated SpeechT5 VC (microsoft/speecht5_vc) on RTX 4090: slow (RTF_p95>2 @ 600ms chunks) and fails artifact gates (loud silence leakage + dropouts); reject. Artifacts in `runs/vc_quest/speecht5/user_pair/*` and summary in `docs/vc_quest.md`.
-- Now: VC quest: validate FreeVC v2 listening quality and decide whether to adopt it for real-time timbre VC (keep Vevo as high-quality baseline).
+- VC quest (2026-01-09):
+  - Evaluated YingMusic-SVC on RTX 4090: steps=10 enables w600/h300 borderline realtime (mean window≈0.29s) with improved WER vs steps=20; keep as candidate pending listening. Artifacts in `runs/vc_quest/yingmusic_svc/user_pair_w600_h300_s10/*`.
+- VC quest (2026-01-09):
+  - Evaluated SaMoye-SVC on RTX 4090: very fast (mean window≈0.073s) but weak content preservation (high WER) offline+stream; reject. Artifacts in `runs/vc_quest/samoye_svc/user_pair/*`.
+- VC quest (2026-01-09):
+  - EZ-VC runner implemented but blocked on gated HF auth on GPU host (`huggingface-cli login` needed).
+- Now: VC quest: pick a low-latency timbre VC candidate for live calls (FreeVC vs YingMusic-SVC vs Vevo baseline), then build a minimal real-time runner for the winner.
 - Next:
-  - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC artifacts (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check metrics vs perception.
-  - If yes: implement a minimal real-time FreeVC runner (mic->buffer->GPU inference->playback) using the selected window/hop.
-  - If no: fall back to target-trained real-time VC (RVC/so-vits-svc) while keeping Vevo as the high-quality baseline.
+  - Have user listen to VC quest artifacts for FreeVC (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`), YingMusic (`runs/vc_quest/yingmusic_svc/user_pair_w600_h300_s10/*`), and Vevo baseline to reconcile metrics vs perception.
+  - Unblock EZ-VC by logging in on Vast host, then run `scripts/vc_quest/ezvc_run_user_pair_gpu.sh` and compare.
+  - Implement a minimal real-time runner for the best timbre-VC model (start with FreeVC if no clear winner).
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
   - Whether to add optional VAD/gating to skip inference on silence (quality + compute).
