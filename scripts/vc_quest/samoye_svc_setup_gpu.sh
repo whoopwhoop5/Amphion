@@ -51,6 +51,7 @@ python -m pip install -U \
   "tqdm" \
   "pyworld" \
   "faiss-cpu==1.7.4" \
+  "transformers==4.46.3" \
   "huggingface-hub>=0.28.1" \
   "webrtcvad"
 
