@@ -32,12 +32,17 @@ mkdir -p "${HF_HOME}"
 echo "[facodec_run] hf_repo=${HF_REPO} ref_max_sec=${REF_MAX_SEC} use_residual=${USE_RESIDUAL} seed=${SEED}"
 echo "[facodec_run] Streaming: window=${STREAM_WINDOW_MS}ms hop=${STREAM_HOP_MS}ms fade=${STREAM_FADE_MS}ms"
 
+RES_FLAG="--no-use_residual"
+case "${USE_RESIDUAL}" in
+  1|true|TRUE|yes|YES|y|Y) RES_FLAG="--use_residual" ;;
+esac
+
 python -m evaluation.vc_quest.facodec_convert \
   --hf_repo "${HF_REPO}" \
   --device cuda:0 \
   --seed "${SEED}" \
   --ref_max_sec "${REF_MAX_SEC}" \
-  --use_residual "${USE_RESIDUAL}" \
+  ${RES_FLAG} \
   --ref "${REF_FR}" \
   --src "${SRC_V5}" \
   --out "${RUN_DIR}/v5_to_fr_offline.wav" \
@@ -48,7 +53,7 @@ python -m evaluation.vc_quest.facodec_convert \
   --device cuda:0 \
   --seed "${SEED}" \
   --ref_max_sec "${REF_MAX_SEC}" \
-  --use_residual "${USE_RESIDUAL}" \
+  ${RES_FLAG} \
   --ref "${REF_V5}" \
   --src "${SRC_FR}" \
   --out "${RUN_DIR}/fr_to_v5_offline.wav" \
@@ -59,7 +64,7 @@ python -m evaluation.vc_quest.facodec_convert \
   --device cuda:0 \
   --seed "${SEED}" \
   --ref_max_sec "${REF_MAX_SEC}" \
-  --use_residual "${USE_RESIDUAL}" \
+  ${RES_FLAG} \
   --ref "${REF_FR}" \
   --src "${SRC_V5}" \
   --out "${RUN_DIR}/v5_to_fr_stream.wav" \
@@ -74,7 +79,7 @@ python -m evaluation.vc_quest.facodec_convert \
   --device cuda:0 \
   --seed "${SEED}" \
   --ref_max_sec "${REF_MAX_SEC}" \
-  --use_residual "${USE_RESIDUAL}" \
+  ${RES_FLAG} \
   --ref "${REF_V5}" \
   --src "${SRC_FR}" \
   --out "${RUN_DIR}/fr_to_v5_stream.wav" \
@@ -113,4 +118,3 @@ python -m evaluation.vc_quest.score_outputs \
   --out_json "${RUN_DIR}/fr_to_v5_stream.report.json"
 
 echo "[facodec_run] Wrote artifacts to ${RUN_DIR}"
-
