@@ -351,7 +351,10 @@ def _autocast_if_needed(device: "torch.device", fp16: bool):
 def _torch_inference_mode():
     import torch
 
-    with torch.inference_mode():
+    # Seed-VC's HiFT vocoder (weight_norm + f0_predictor) is not compatible with
+    # `torch.inference_mode()` on some PyTorch versions ("Inference tensors cannot be saved for backward").
+    # `torch.no_grad()` is still deterministic and safe for inference here.
+    with torch.no_grad():
         yield
 
 
