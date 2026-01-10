@@ -363,10 +363,28 @@ Not actionable yet (paper/demo only or no public checkpoints):
 
 ### 16) Conan (User-tian/Conan)
 - Bead: `Amphion-ehh.16`
-- Status: open
+- Status: evaluated (reject)
 - Hypothesis: purpose-built chunkwise online VC (Emformer + causal vocoder) should support <=600ms chunks with strong semantic fidelity.
-- Notes:
-  - Pretrained checkpoints are hosted on Google Drive (per upstream README); if downloads fail (rate-limit/permissions), mark as blocked and move on.
+- Implementation: `evaluation/vc_quest/conan_convert.py` + `scripts/vc_quest/conan_{setup,run}_user_pair_gpu.sh`
+- Setup notes:
+  - Conan uses top-level `modules/` and `tasks/` namespace packages (no `__init__.py`) and can collide with Amphion’s `modules/` package; wrapper forces Conan’s namespace packages to win.
+  - Conan’s `tasks/tts/vocoder_infer/__init__.py` imports an NSF HiFiGAN variant that depends on missing `modules.parallel_wavegan`; wrapper loads the **causal HiFiGAN** directly to avoid that import path.
+  - Checkpoints are hosted on Google Drive (per upstream README); downloads can be brittle due to quota/confirm-token flows.
+
+- Results (RTX 4090, `conan_emformer.yaml`, MAX_SEC=10, sr=16kHz):
+  - Streaming config: `chunk_ms=80` (4 tokens), `right_context=2` frames, `model_context_frames=64` (~1.28s), `vocoder_context_frames=4`, `fade_ms=10`
+  - Speed:
+    - Offline: `RTF≈0.025`
+    - Stream: `RTF≈0.39` (`mean_chunk≈31ms @ 80ms`, `first_emit≈0.21s`)
+  - Quality (Whisper `base` WER + WavLM speaker similarity; our user pair):
+    - Offline:
+      - `v5_to_fr_offline`:  S-SIM≈0.898, WER≈0.943
+      - `fr_to_v5_offline`:  S-SIM≈0.837, WER≈1.188
+    - Stream:
+      - `v5_to_fr_stream`:   S-SIM≈0.905, WER≈0.943
+      - `fr_to_v5_stream`:   S-SIM≈0.821, WER≈1.000
+- Artifacts: `runs/vc_quest/conan/user_pair/*`
+- Conclusion: **reject** (streaming timing + speed are excellent, but content preservation is extremely weak on our user pair in both offline and streaming modes).
 
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
