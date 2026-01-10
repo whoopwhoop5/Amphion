@@ -298,14 +298,22 @@ Not actionable yet (paper/demo only or no public checkpoints):
 
 ### 12) TinyVC (uthree/tinyvc)
 - Bead: `Amphion-ehh.12`
-- Status: in_progress
+- Status: evaluated (reject)
 - Hypothesis: TinyVC’s SOLA streaming wrapper can provide **<=600ms effective context** with high stability (small IO blocks) and competitive timbre transfer, potentially even on CPU.
 - Implementation: `evaluation/vc_quest/tinyvc_convert.py` + `scripts/vc_quest/tinyvc_*`
 - Setup notes:
   - Pretrained weights are public on HF (`uthree/tinyvc`: `models/encoder.pt`, `models/decoder.pt`).
   - TinyVC operates at a fixed **24kHz** sample-rate.
   - Streaming uses TinyVC’s built-in SOLA (`module.infer.StreamInfer`) with a small IO block size (default `block_size=1920` samples ≈ 80ms).
-- Next: run the user-pair offline + streaming sim on RTX 4090 and record WER/S-SIM/artifacts + realtime factor.
+- Results (macOS M3 Max, MPS, block_size=1920 ≈ 80ms, VAD=rms @ -55dB, peak_limit=0.99):
+  - Speed: `p95_window_sec≈0.0225s` => `RTF_p95≈0.28` (real-time is easy).
+  - Offline:
+    - `v5_to_fr_offline`: S-SIM≈0.656, WER≈0.945
+    - `fr_to_v5_offline`: S-SIM≈0.692, WER≈1.000
+  - Stream:
+    - `v5_to_fr_stream`: S-SIM≈0.610, WER≈0.862, leak_p95≈-40.8dB, drop≈0.058
+    - `fr_to_v5_stream`: S-SIM≈0.591, WER≈1.068, leak_p95≈-24.2dB, drop≈0.059
+- Conclusion: extremely fast, but **content preservation and speaker similarity are not competitive** on our user pair in both offline and stream modes. Likely reject for our live-call VC use case (unless we accept per-speaker fine-tuning/index building beyond a short reference clip).
 
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
