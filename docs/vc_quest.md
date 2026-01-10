@@ -12,6 +12,14 @@ Key constraints:
 - Current best live-like config (RTX 4090): `window_ms=2000`, `hop_ms=500`, `flow_matching_steps=6`, `fade_ms=10`
 - Known limitation: needs ~2s context to stay intelligible/clean; startup delay ~2s+.
 - Latest live fix: wrapper-level VAD + limiter; removed per-window RMS normalization (reduces noise/cutouts).
+- User-pair scoring (Whisper `base` WER + WavLM speaker similarity; scored on macOS; outputs in `runs/vevo_live/user_pair/*`):
+  - Offline:
+    - `v5_to_fr_offline`: S-SIM≈0.888, WER≈0.762
+    - `fr_to_v5_offline`: S-SIM≈0.963, WER≈0.432
+  - Online (these are the files you listened to and reported “noise/cutouts”):
+    - `v5_to_fr_online`: S-SIM≈0.914, WER≈0.866, dropout≈0.036
+    - `fr_to_v5_online`: S-SIM≈0.984, WER≈0.636, dropout≈0.123, silence_leak_p95≈-21.8dB
+  - Takeaway: Vevo offline is strong, but our current Vevo streaming artifacts (dropouts / silence leakage) show up clearly in objective metrics.
 
 ## Candidates (in progress)
 ### 1) OpenVoice (tone color conversion)
