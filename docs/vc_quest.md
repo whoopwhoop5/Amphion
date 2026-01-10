@@ -333,9 +333,11 @@ Not actionable yet (paper/demo only or no public checkpoints):
 - Conclusion: **reject** (too slow with CPU vocoder workaround, and quality is not competitive on our pair).
 
 ### 14) HiFi-VC (tinkoff-ai/hifi_vc)
-- Status: planned
+- Bead: `Amphion-ehh.14`
+- Status: in_progress
 - Hypothesis: high-quality any-to-any VC offline; streaming may be slow/unstable due to ASR/F0 dependencies and lack of native chunking.
-- Next: integrate notebook inference into a CLI wrapper and evaluate offline + streaming sim.
+- Implementation: `evaluation/vc_quest/hifivc_convert.py` + `scripts/vc_quest/hifivc_{setup,run}_user_pair_gpu.sh`
+- Next: run RTX 4090 offline + streaming sim and record WER/S-SIM/artifacts + realtime factor.
 
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
