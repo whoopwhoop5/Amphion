@@ -72,6 +72,8 @@
   - Evaluated FACodec (NaturalSpeech3) on RTX 4090: extremely fast and stable (RTF_mean≈0.18 @ w600/h300) but intelligibility is inconsistent on our French user pair; keep as a secondary candidate. Artifacts in `runs/vc_quest/facodec/user_pair/*` and summary in `docs/vc_quest.md`.
 - VC quest (2026-01-10):
   - Scored Vevo user-pair outputs (`runs/vevo_live/user_pair/*`) with the same scorer as VC quest (Whisper `base` WER + WavLM speaker similarity) and updated baseline numbers in `docs/vc_quest.md`. Vevo online files show large dropouts/noise vs FreeVC streaming (objective metrics match listening report).
+- VC quest (2026-01-10):
+  - Evaluated ChatterboxVC (ResembleAI/chatterbox) on RTX 4090 (offline + stream w800/h400, cfm_timesteps=10). Speaker similarity + stability are excellent (min S-SIM≈0.958, drop≈0), but content WER is worse than FreeVC and speed is borderline slower than realtime at hop=400ms (RTF_p95≈1.09). Artifacts copied to mac under `runs/vc_quest/chatterbox/user_pair/*`; summary in `docs/vc_quest.md`.
 - Now: VC quest: pick a low-latency timbre VC candidate for live calls (FreeVC vs YingMusic-SVC vs FACodec vs Vevo baseline), then build a minimal real-time runner for the winner.
 - Next:
   - Have user listen to VC quest artifacts for FreeVC (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`), YingMusic (`runs/vc_quest/yingmusic_svc/user_pair_w600_h300_s10/*`), FACodec (`runs/vc_quest/facodec/user_pair/*`), and Vevo baseline to reconcile metrics vs perception.
