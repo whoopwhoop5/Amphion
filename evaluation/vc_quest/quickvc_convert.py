@@ -120,6 +120,18 @@ def _build_engine(
 ):
     _patch_sys_path(quickvc_dir)
 
+    # QuickVC imports `from scipy.signal import kaiser`, but recent SciPy versions moved/stop-export it.
+    # Patch the attribute so QuickVC's import continues to work.
+    try:
+        import scipy.signal as _scipy_signal
+
+        if not hasattr(_scipy_signal, "kaiser"):
+            from scipy.signal.windows import kaiser as _kaiser  # type: ignore
+
+            setattr(_scipy_signal, "kaiser", _kaiser)
+    except Exception:
+        pass
+
     import utils  # type: ignore[import-not-found]
     from mel_processing import mel_spectrogram_torch  # type: ignore[import-not-found]
     from models import SynthesizerTrn  # type: ignore[import-not-found]
@@ -429,4 +441,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
