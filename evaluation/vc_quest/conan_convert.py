@@ -301,9 +301,6 @@ def _run_offline(
     ref_mel_np = np.clip(ref_mel_np, float(hparams["mel_vmin"]), float(hparams["mel_vmax"]))
     ref_mel = torch.from_numpy(np.asarray(ref_mel_np, dtype=np.float32)).to(device)
 
-    # Precompute speaker/style embedding once.
-    style_embed = model.encode_spk_embed(ref_mel.unsqueeze(0).transpose(1, 2)).transpose(1, 2)
-
     # Source waveform -> 16k, trim to max_sec.
     src_wav_np, src_sr = _load_mono(src_wav)
     src_wav_np = _resample_if_needed(src_wav_np, src_sr, out_sr)
@@ -335,9 +332,9 @@ def _run_offline(
     t0 = time.time()
     out = model(
         content=codes,
-        spk_embed=style_embed,
+        spk_embed=None,
         target=None,
-        ref=None,
+        ref=ref_mel.unsqueeze(0),
         f0=None,
         uv=None,
         infer=True,
@@ -396,7 +393,7 @@ def _run_streaming(
     )["mel"]
     ref_mel_np = np.clip(ref_mel_np, float(hparams["mel_vmin"]), float(hparams["mel_vmax"]))
     ref_mel = torch.from_numpy(np.asarray(ref_mel_np, dtype=np.float32)).to(device)
-    style_embed = model.encode_spk_embed(ref_mel.unsqueeze(0).transpose(1, 2)).transpose(1, 2)
+    ref_mel = ref_mel.unsqueeze(0)  # [1, T_ref, 80]
 
     # Source -> 16k -> mel.
     src_wav_np, src_sr = _load_mono(src_wav)
@@ -464,9 +461,9 @@ def _run_streaming(
 
         out = model(
             content=codes_window,
-            spk_embed=style_embed,
+            spk_embed=None,
             target=None,
-            ref=None,
+            ref=ref_mel,
             f0=None,
             uv=None,
             infer=True,
