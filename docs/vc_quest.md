@@ -262,16 +262,24 @@ Key constraints:
 - Setup notes:
   - Uses conda env `chatterbox` + HF cache under `/root/.hf_home` (avoid Vast `/workspace` disk).
   - Imports `chatterbox.vc` without executing upstream `chatterbox/__init__.py` to avoid installing full TTS deps (but VC still requires `diffusers`, `transformers`, `conformer`, `omegaconf`).
-- Results (RTX 4090, `cfm_timesteps=10`, watermark enabled, streaming `w800/h400`, WebRTC VAD, emit_align=center):
-  - Speed: mean_window≈0.433s, p95_window≈0.437s ⇒ **RTF_p95≈1.09** (slightly *slower* than real-time at hop=400ms).
+- Results (RTX 4090, watermark enabled, WebRTC VAD, emit_align=center, streaming `w800/h400`):
+  - `cfm_timesteps=10` (best quality so far, but *slightly* slower than real-time):
+    - Speed: mean_window≈0.433s, p95_window≈0.437s ⇒ **RTF_p95≈1.09** @ hop=400ms
+    - Stream:
+      - `v5_to_fr_stream`: S-SIM≈0.958, WER≈0.681, leak_p95≈-37.2dB, drop≈0.0007
+      - `fr_to_v5_stream`: S-SIM≈0.963, WER≈0.736, leak_p95≈-42.7dB, drop≈0.0000
+  - `cfm_timesteps=8` (best real-time tradeoff so far):
+    - Speed: **RTF_p95≈0.91** @ hop=400ms
+    - Stream:
+      - `v5_to_fr_stream`: S-SIM≈0.958, WER≈0.675, leak_p95≈-36.3dB, drop≈0.0012
+      - `fr_to_v5_stream`: S-SIM≈0.960, WER≈0.714, leak_p95≈-43.2dB, drop≈0.0000
   - Offline:
     - `v5_to_fr_offline`: S-SIM≈0.911, WER≈0.604
     - `fr_to_v5_offline`: S-SIM≈0.858, WER≈0.482
-  - Stream:
-    - `v5_to_fr_stream`: S-SIM≈0.958, WER≈0.681, leak_p95≈-37.2dB, drop≈0.0007
-    - `fr_to_v5_stream`: S-SIM≈0.963, WER≈0.736, leak_p95≈-42.7dB, drop≈0.0000
-  - Artifacts: `runs/vc_quest/chatterbox/user_pair/*`
-- Conclusion: speaker similarity + stability are excellent, but content preservation (WER) is worse than FreeVC on this pair, and `cfm_timesteps=10` is borderline for real-time at hop=400ms. Next would be to reduce `cfm_timesteps` and/or increase hop (e.g., `hop_ms=600`) and re-score.
+  - Artifacts:
+    - `runs/vc_quest/chatterbox/user_pair/*` (timesteps=10, simple run script)
+    - `runs/vc_quest/chatterbox/user_pair_search_s8/*` (timesteps=8, realtime; recommended for comparison)
+- Conclusion: speaker similarity + stability are excellent, but content preservation (WER) is still worse than FreeVC on this pair. Chatterbox can be made real-time at hop=400ms by reducing `cfm_timesteps` (best so far: `cfm_timesteps=8`), but it remains behind FreeVC in intelligibility under our Whisper-WER metric.
 
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
