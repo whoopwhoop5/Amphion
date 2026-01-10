@@ -182,7 +182,7 @@ def _mel_spectrogram_torch(
     hop_size: int,
     win_size: int,
     fmin: float,
-    fmax: float,
+    fmax: Optional[float],
     center: bool = False,
 ) -> torch.Tensor:
     """QuickVC-compatible mel spectrogram (Torch STFT + librosa mel filterbank).
@@ -196,8 +196,10 @@ def _mel_spectrogram_torch(
     if y.ndim != 2:
         raise ValueError(f"Expected y as [B, T], got shape={tuple(y.shape)}")
 
+    fmax_val = float(sampling_rate) / 2.0 if fmax is None else float(fmax)
+
     dtype_device = f"{y.dtype}_{y.device}"
-    fmax_key = f"{float(fmax)}_{num_mels}_{n_fft}_{sampling_rate}_{dtype_device}"
+    fmax_key = f"{fmax_val}_{num_mels}_{n_fft}_{sampling_rate}_{dtype_device}"
     win_key = f"{win_size}_{dtype_device}"
 
     if fmax_key not in _MEL_BASIS:
@@ -206,7 +208,7 @@ def _mel_spectrogram_torch(
             n_fft=int(n_fft),
             n_mels=int(num_mels),
             fmin=float(fmin),
-            fmax=float(fmax),
+            fmax=float(fmax_val),
         )
         _MEL_BASIS[fmax_key] = torch.from_numpy(mel).to(dtype=y.dtype, device=y.device)
     if win_key not in _HANN_WINDOW:
@@ -315,7 +317,7 @@ def main() -> int:
         hop_size=int(hps.data.hop_length),
         win_size=int(hps.data.win_length),
         fmin=float(hps.data.mel_fmin),
-        fmax=float(hps.data.mel_fmax),
+        fmax=hps.data.mel_fmax,
     )
 
     src_wav, src_sr = _load_mono(str(args.src))
