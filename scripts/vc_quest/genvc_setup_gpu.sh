@@ -46,6 +46,9 @@ python -m pip install -U --index-url https://download.pytorch.org/whl/cu121 torc
 # GenVC author-recommended transformers version for streaming stability.
 python -m pip install -U transformers==4.33.0
 
+# fairseq (and its hydra/omegaconf deps) requires pip<24.1 due to legacy metadata on omegaconf<2.1.
+python -m pip install -U "pip<24.1"
+
 # fairseq is required for ContentVec feature extraction (python<3.11).
 python -m pip install -U "fairseq==0.12.2"
 
@@ -77,4 +80,3 @@ echo "[genvc_setup] pre_trained contents:"
 ls -la "${GENVC_DIR}/pre_trained" | head -n 50
 
 echo "[genvc_setup] Done. Activate with: source ${CONDA_SH} && conda activate ${ENV_NAME}"
-
