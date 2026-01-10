@@ -45,7 +45,7 @@ python -m pip install -U --index-url https://download.pytorch.org/whl/cu121 torc
 
 # VC-only deps (avoid pulling the full chatterbox-tts dependency set).
 python -m pip install -U "numpy>=1.24.0,<1.26.0" scipy soundfile librosa==0.11.0 tqdm webrtcvad
-python -m pip install -U huggingface_hub safetensors "resemble-perth==1.0.1" s3tokenizer omegaconf
+python -m pip install -U huggingface_hub safetensors "resemble-perth==1.0.1" s3tokenizer omegaconf conformer==0.3.2
 
 if [[ ! -d "${CHATTERBOX_DIR}" ]]; then
   echo "[chatterbox_setup] Cloning chatterbox to ${CHATTERBOX_DIR}"
