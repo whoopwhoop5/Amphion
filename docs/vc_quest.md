@@ -23,6 +23,7 @@ Key constraints:
 
 ## Next candidates (actionable backlog)
 Actionable now (public repo + downloadable weights/checkpoints):
+- **GenVC** (`caizexin/GenVC`) — LM-based zero-shot VC with built-in streaming mode (HF weights: `ZexinCai/GenVC`). (Bead: `Amphion-ehh.15`, in progress)
 - **TinyVC** (`uthree/tinyvc`) — real-time SOLA streaming; pretrained `encoder.pt`/`decoder.pt` on HF. (Bead: `Amphion-ehh.12`, in progress)
 - **FragmentVC** (`yistLin/FragmentVC`) — pretrained available; streaming behavior unclear (may need wrapper-level chunking).
 - ~~**HiFi-VC** (`tinkoff-ai/hifi_vc`, archived) — pretrained link currently appears dead (Google Drive 404 as of 2026-01-10).~~
@@ -34,7 +35,7 @@ Unclear fit / needs investigation:
 - **SPARC** (`Berkeley-Speech-Group/Speech-Articulatory-Coding`) — may not provide an end-to-end VC pipeline.
 
 Not actionable yet (paper/demo only or no public checkpoints):
-- CONAN, RT-VC, ALO-VC, StreamVC (no checkpoint), DiffVC+ (no checkpoint), PFlow-VC (demo), ReFlow-VC (demo).
+- RT-VC, ALO-VC, StreamVC (no checkpoint), DiffVC+ (no checkpoint), PFlow-VC (demo), ReFlow-VC (demo).
 
 ## Candidates (in progress)
 ### 1) OpenVoice (tone color conversion)
@@ -340,6 +341,20 @@ Not actionable yet (paper/demo only or no public checkpoints):
 - Blocker (2026-01-10):
   - The official pretrained link in the upstream README (`drive.google.com/.../1oFwMeuQtwaBEyOFkyG7c7LfBQiRe3RdW`) returns HTTP 404, and `gdown` cannot retrieve it (even with `--fuzzy`).
   - Without `model.pt`, we cannot run inference to evaluate quality/speed; revisit if a new mirror appears (HF/S3) or if we obtain weights manually.
+
+### 15) GenVC (caizexin/GenVC)
+- Bead: `Amphion-ehh.15`
+- Status: in_progress
+- Hypothesis: LM-based zero-shot VC with built-in streaming inference; may preserve content better than “tone-color” VC while supporting ~1s chunks.
+- Implementation: `evaluation/vc_quest/genvc_convert.py` + `scripts/vc_quest/genvc_{setup,run}_user_pair_gpu.sh`
+- Next: run RTX 4090 offline + streaming sim and record WER/S-SIM/artifacts + realtime factor.
+
+### 16) Conan (User-tian/Conan)
+- Bead: `Amphion-ehh.16`
+- Status: open
+- Hypothesis: purpose-built chunkwise online VC (Emformer + causal vocoder) should support <=600ms chunks with strong semantic fidelity.
+- Notes:
+  - Pretrained checkpoints are hosted on Google Drive (per upstream README); if downloads fail (rate-limit/permissions), mark as blocked and move on.
 
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
