@@ -46,6 +46,7 @@ python -m pip install -U --index-url https://download.pytorch.org/whl/cu121 torc
 python -m pip install -U \
   numpy==1.24.1 \
   scipy \
+  scikit-image \
   soundfile \
   librosa==0.10.1 \
   resampy \
@@ -74,4 +75,3 @@ echo "[conan_setup] checkpoints summary:"
 ls -la "${CKPT_DIR}" | head -n 200
 
 echo "[conan_setup] Done. Activate with: source ${CONDA_SH} && conda activate ${ENV_NAME}"
-

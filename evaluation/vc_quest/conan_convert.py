@@ -194,6 +194,22 @@ def _mel_spectrogram_torch(
     return mel_spec.transpose(1, 2)
 
 
+class _HifiGanVocoder:
+    def __init__(self, model: torch.nn.Module, device: torch.device):
+        self.model = model
+        self.device = device
+
+    def spec2wav(self, mel: np.ndarray) -> np.ndarray:
+        mel = np.asarray(mel, dtype=np.float32)
+        if mel.ndim != 2:
+            raise ValueError(f"Expected mel to be [T, n_mels], got shape={mel.shape}")
+        with torch.no_grad():
+            c = torch.from_numpy(mel).unsqueeze(0).to(self.device)
+            c = c.transpose(2, 1)  # [1, n_mels, T]
+            y = self.model(c).view(-1)
+        return y.detach().cpu().numpy()
+
+
 @torch.inference_mode()
 def _build_engine(
     *,
@@ -207,9 +223,9 @@ def _build_engine(
 
     from utils.commons.ckpt_utils import load_ckpt, load_ckpt_emformer  # type: ignore[import-not-found]
     from utils.commons.hparams import hparams, set_hparams  # type: ignore[import-not-found]
-    from tasks.tts.vocoder_infer.base_vocoder import get_vocoder_cls  # type: ignore[import-not-found]
     from modules.Conan.Conan import Conan  # type: ignore[import-not-found]
     from modules.Emformer.emformer import EmformerDistillModel  # type: ignore[import-not-found]
+    from modules.vocoder.hifigan.hifigan_causal import HifiGanGenerator  # type: ignore[import-not-found]
 
     prev_cwd = os.getcwd()
     try:
@@ -227,10 +243,20 @@ def _build_engine(
         load_ckpt(model, hparams["work_dir"], strict=False)
         model = model.to(device)
 
-        vocoder_cls = get_vocoder_cls(hparams["vocoder"])
-        if vocoder_cls is None:
-            raise ValueError(f"Vocoder '{hparams['vocoder']}' is not registered.")
-        vocoder = vocoder_cls()
+        if hparams.get("vocoder") != "HifiGAN":
+            raise ValueError(f"Unsupported Conan vocoder: {hparams.get('vocoder')} (expected 'HifiGAN').")
+
+        vocoder_ckpt = str(hparams["vocoder_ckpt"])
+        vocoder_config = set_hparams(f"{vocoder_ckpt}/config.yaml", global_hparams=False)
+        vocoder_model = HifiGanGenerator(vocoder_config)
+        load_ckpt(vocoder_model, vocoder_ckpt, "model_gen")
+        vocoder_model = vocoder_model.to(device)
+        vocoder_model.eval()
+        vocoder = _HifiGanVocoder(vocoder_model, device=device)
+
+        # Warmup (helps first chunk latency on some stacks)
+        mel_bins = int(hparams.get("audio_num_mel_bins", 80))
+        _ = vocoder.spec2wav(np.zeros((4, mel_bins), dtype=np.float32))
 
         emformer = EmformerDistillModel(hparams, output_dim=100)
         load_ckpt_emformer(emformer, hparams["emformer_ckpt"], strict=False)
