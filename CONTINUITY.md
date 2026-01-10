@@ -82,12 +82,19 @@
   - Vast RTX 4090 instance was recreated; remote is reachable again via `ssh vastai-gpu-1` and repo can be re-pulled + venv rebuilt as needed.
 - VC quest (2026-01-10):
   - Evaluated TinyVC (uthree/tinyvc) on macOS M3 Max (MPS): extremely fast (RTF_p95≈0.28 @ ~80ms hops), but poor content preservation + low speaker similarity on our user pair in both offline+stream; reject. Artifacts in `runs/vc_quest/tinyvc/user_pair/*` and summary in `docs/vc_quest.md`.
+- VC quest (2026-01-10):
+  - Evaluated Conan (User-tian/Conan) on Vast RTX 4090: realtime streaming (chunk=80ms, mean_chunk≈31ms) but extremely weak content preservation on our user pair (WER≈0.94–1.19); reject. Artifacts in `runs/vc_quest/conan/user_pair/*` and summary in `docs/vc_quest.md`.
+- VC quest (2026-01-10):
+  - Evaluated QuickVC (quickvc/QuickVC-VoiceConversion) on Vast RTX 4090: very fast (offline RTF≈0.075; stream RTF≈0.094 @ w800/h400) but streaming content preservation is weak (WER≈0.91–1.0) with loud silence leakage; reject. Artifacts in `runs/vc_quest/quickvc/user_pair/*` and summary in `docs/vc_quest.md`.
+- VC quest (2026-01-10):
+  - VTuber BowTie (zju-muslab/VTuberBowTie) reviewed: fixed target-speaker voice changer (not reference-clip zero-shot), so not a fit for our requirement unless retrained/adapted; reject/out-of-scope (noted in `docs/vc_quest.md`).
 - Now: VC quest: HiFi-VC is blocked (weights missing); focus on shipping a real-time runner for the best current candidates (FreeVC / Chatterbox) and keep ranking + artifacts consistent.
 - Next:
   - On the new Vast instance: `git pull` and rerun the top candidates (FreeVC/Chatterbox) as needed to regenerate listen artifacts + reports.
   - Implement a minimal real-time runner for the best timbre-VC model (start with FreeVC unless Chatterbox listening is clearly better).
+  - Continue evaluating additional actionable candidates (AutoVC / ControlVC / PPG-VC / NeuralVC if checkpoints are accessible).
   - If we still want HiFi-VC: find an alternative public checkpoint mirror (HF/S3) or obtain weights manually.
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
   - Whether to add optional VAD/gating to skip inference on silence (quality + compute).
-- Working set (files/ids/commands): `evaluation/vc_quest/*`, `scripts/vc_quest/*`, `runs/vc_quest/*`, `docs/vc_quest.md`, `bd list`
+- Working set (files/ids/commands): `evaluation/vc_quest/*`, `scripts/vc_quest/*`, `runs/vc_quest/*`, `docs/vc_quest.md`, `bd list`, `ssh vastai-gpu-1`
