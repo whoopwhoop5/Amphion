@@ -119,7 +119,12 @@ def _log_mel_spectrogram_fragmentvc(
             win_length=int(win_len),
         )
     )
-    mel_fb = librosa.filters.mel(int(sample_rate), int(n_fft), n_mels=int(n_mels), fmin=float(f_min))
+    mel_fb = librosa.filters.mel(
+        sr=int(sample_rate),
+        n_fft=int(n_fft),
+        n_mels=int(n_mels),
+        fmin=float(f_min),
+    )
     mel_spec = np.dot(mel_fb, magnitude)
     log_mel = np.log(mel_spec + 1e-9).T
     return np.asarray(log_mel, dtype=np.float32)
@@ -410,4 +415,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
