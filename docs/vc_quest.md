@@ -254,6 +254,25 @@ Key constraints:
 - Artifacts: `runs/vc_quest/facodec/user_pair/*`
 - Conclusion: extremely fast + stable, but content preservation is inconsistent on our French user pair (one direction has very high WER). Worth a quick follow-up sweep (e.g., `use_residual=true`) to see if intelligibility improves, but not yet a clear winner over FreeVC.
 
+### 11) ChatterboxVC (ResembleAI/chatterbox)
+- Bead: `Amphion-bck`
+- Status: evaluated (candidate, but not yet real-time at our preferred hop size)
+- Hypothesis: zero-shot VC backend with strong speaker similarity; may support buffered streaming via our wrapper.
+- Implementation: `evaluation/vc_quest/chatterbox_convert.py` + `scripts/vc_quest/chatterbox_{setup,run}_user_pair_gpu.sh`
+- Setup notes:
+  - Uses conda env `chatterbox` + HF cache under `/root/.hf_home` (avoid Vast `/workspace` disk).
+  - Imports `chatterbox.vc` without executing upstream `chatterbox/__init__.py` to avoid installing full TTS deps (but VC still requires `diffusers`, `transformers`, `conformer`, `omegaconf`).
+- Results (RTX 4090, `cfm_timesteps=10`, watermark enabled, streaming `w800/h400`, WebRTC VAD, emit_align=center):
+  - Speed: mean_window≈0.433s, p95_window≈0.437s ⇒ **RTF_p95≈1.09** (slightly *slower* than real-time at hop=400ms).
+  - Offline:
+    - `v5_to_fr_offline`: S-SIM≈0.911, WER≈0.604
+    - `fr_to_v5_offline`: S-SIM≈0.858, WER≈0.482
+  - Stream:
+    - `v5_to_fr_stream`: S-SIM≈0.958, WER≈0.681, leak_p95≈-37.2dB, drop≈0.0007
+    - `fr_to_v5_stream`: S-SIM≈0.963, WER≈0.736, leak_p95≈-42.7dB, drop≈0.0000
+  - Artifacts: `runs/vc_quest/chatterbox/user_pair/*`
+- Conclusion: speaker similarity + stability are excellent, but content preservation (WER) is worse than FreeVC on this pair, and `cfm_timesteps=10` is borderline for real-time at hop=400ms. Next would be to reduce `cfm_timesteps` and/or increase hop (e.g., `hop_ms=600`) and re-score.
+
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
   - If FreeVC v2 is acceptable: implement a minimal real-time FreeVC runner (mic->buffer->GPU inference->playback) using the selected window/hop.
