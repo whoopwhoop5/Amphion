@@ -386,9 +386,32 @@ Not actionable yet (paper/demo only or no public checkpoints):
 - Artifacts: `runs/vc_quest/conan/user_pair/*`
 - Conclusion: **reject** (streaming timing + speed are excellent, but content preservation is extremely weak on our user pair in both offline and streaming modes).
 
+### 17) QuickVC (quickvc/QuickVC-VoiceConversion)
+- Bead: `Amphion-bsv`
+- Status: evaluated (reject)
+- Hypothesis: iSTFT-based VC decoder may allow faster-than-real-time conversion with good timbre transfer; wrapper-level chunking might enable <=600ms streaming.
+- Implementation: `evaluation/vc_quest/quickvc_convert.py` + `scripts/vc_quest/quickvc_{setup,run}_user_pair_gpu.sh`
+- Setup notes:
+  - Pretrained weights are hosted on Google Drive and include `G_*.pth` / `D_*.pth` (we use the generator `G_*.pth`).
+  - Uses HuBERT-soft via `torch.hub` (`bshall/hubert`) for content features (first run downloads ~361MB checkpoint).
+  - QuickVC’s mel helper is incompatible with modern librosa (keyword-only mel args), so our wrapper computes the mel spectrogram internally.
+- Results (RTX 4090, MAX_SEC=10, sr=16kHz):
+  - Speed:
+    - Offline: `RTF≈0.075`
+    - Stream (`window=800ms, hop=400ms, fade=10ms, emit_align=end`): `RTF≈0.094`, delay≈400ms
+  - Quality (Whisper `base` WER + WavLM speaker similarity; our user pair):
+    - Offline:
+      - `v5_to_fr_offline`:  S-SIM≈0.953, WER≈0.698
+      - `fr_to_v5_offline`:  S-SIM≈0.758, WER≈0.562
+    - Stream (`w800/h400`):
+      - `v5_to_fr_stream`:   S-SIM≈0.915, WER≈0.911, silent_out_p95≈-26.2dB, drop≈0.017
+      - `fr_to_v5_stream`:   S-SIM≈0.816, WER≈1.000, drop≈0.008
+- Artifacts: `runs/vc_quest/quickvc/user_pair/*`
+- Conclusion: **reject** for live-call VC (very fast, but streaming degrades content heavily and can produce loud silence leakage / dropouts on our user pair; offline is only moderate and `fr_to_v5` speaker similarity is low).
+
 - Next:
-  - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
-  - If FreeVC v2 is acceptable: implement a minimal real-time FreeVC runner (mic->buffer->GPU inference->playback) using the selected window/hop.
+  - Evaluate additional VC candidates from the backlog: VTuber BowTie, AutoVC, ControlVC, PPG-VC, NeuralVC (if checkpoints are still accessible).
+  - Keep FreeVC + Chatterbox as the current top timbre-VC baselines for real-time.
 
 ## What we record for each candidate
 - **Streaming config:** sample rate, chunk/window, hop, crossfade/OLA, VAD settings, any lookahead.
