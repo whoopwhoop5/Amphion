@@ -26,6 +26,9 @@ from evaluation.vc_quest.streaming_utils import (
     normalize_length,
 )
 
+_MEL_BASIS: dict[str, torch.Tensor] = {}
+_HANN_WINDOW: dict[str, torch.Tensor] = {}
+
 
 EmitAlign = Literal["start", "center", "end"]
 VadMode = Literal["off", "rms", "webrtc"]
@@ -133,7 +136,6 @@ def _build_engine(
         pass
 
     import utils  # type: ignore[import-not-found]
-    from mel_processing import mel_spectrogram_torch  # type: ignore[import-not-found]
     from models import SynthesizerTrn  # type: ignore[import-not-found]
 
     hps = utils.get_hparams_from_file(config_path)
@@ -151,7 +153,7 @@ def _build_engine(
     hubert_soft = hubert_soft.to(device)
     hubert_soft.eval()
 
-    return hps, net_g, hubert_soft, mel_spectrogram_torch
+    return hps, net_g, hubert_soft
 
 
 def _emit_start(
@@ -171,13 +173,73 @@ def _emit_start(
     raise ValueError(f"Unknown emit_align: {emit_align}")
 
 
+def _mel_spectrogram_torch(
+    y: torch.Tensor,
+    *,
+    n_fft: int,
+    num_mels: int,
+    sampling_rate: int,
+    hop_size: int,
+    win_size: int,
+    fmin: float,
+    fmax: float,
+    center: bool = False,
+) -> torch.Tensor:
+    """QuickVC-compatible mel spectrogram (Torch STFT + librosa mel filterbank).
+
+    QuickVC's upstream `mel_processing.py` uses a positional call to `librosa.filters.mel`,
+    which breaks with modern librosa (keyword-only). We compute the same thing here.
+    """
+
+    import librosa
+
+    if y.ndim != 2:
+        raise ValueError(f"Expected y as [B, T], got shape={tuple(y.shape)}")
+
+    dtype_device = f"{y.dtype}_{y.device}"
+    fmax_key = f"{float(fmax)}_{num_mels}_{n_fft}_{sampling_rate}_{dtype_device}"
+    win_key = f"{win_size}_{dtype_device}"
+
+    if fmax_key not in _MEL_BASIS:
+        mel = librosa.filters.mel(
+            sr=int(sampling_rate),
+            n_fft=int(n_fft),
+            n_mels=int(num_mels),
+            fmin=float(fmin),
+            fmax=float(fmax),
+        )
+        _MEL_BASIS[fmax_key] = torch.from_numpy(mel).to(dtype=y.dtype, device=y.device)
+    if win_key not in _HANN_WINDOW:
+        _HANN_WINDOW[win_key] = torch.hann_window(int(win_size)).to(dtype=y.dtype, device=y.device)
+
+    pad = int((int(n_fft) - int(hop_size)) / 2)
+    y = torch.nn.functional.pad(y.unsqueeze(1), (pad, pad), mode="reflect").squeeze(1)
+
+    spec = torch.stft(
+        y,
+        n_fft=int(n_fft),
+        hop_length=int(hop_size),
+        win_length=int(win_size),
+        window=_HANN_WINDOW[win_key],
+        center=bool(center),
+        pad_mode="reflect",
+        normalized=False,
+        onesided=True,
+        return_complex=False,
+    )
+    spec = torch.sqrt(spec.pow(2).sum(-1) + 1e-6)
+
+    mel_spec = torch.matmul(_MEL_BASIS[fmax_key], spec)
+    mel_spec = torch.log(torch.clamp(mel_spec, min=1e-5))
+    return mel_spec
+
+
 @torch.inference_mode()
 def _infer_quickvc(
     *,
     net_g,
     hps,
     hubert_soft,
-    mel_spectrogram_torch,
     src_wav: np.ndarray,
     ref_mel: torch.Tensor,
     out_sample_rate: int,
@@ -228,7 +290,7 @@ def main() -> int:
     _set_determinism(int(args.seed))
     device = torch.device(str(args.device))
 
-    hps, net_g, hubert_soft, mel_spectrogram_torch = _build_engine(
+    hps, net_g, hubert_soft = _build_engine(
         quickvc_dir=str(args.quickvc_dir),
         config_path=str(args.config),
         ckpt_path=str(args.ckpt),
@@ -245,15 +307,15 @@ def main() -> int:
     if float(args.ref_trim_db) > 0:
         ref_wav, _ = librosa.effects.trim(ref_wav, top_db=float(args.ref_trim_db))
     ref_wav_t = torch.from_numpy(np.asarray(ref_wav, dtype=np.float32)).to(device).unsqueeze(0)
-    ref_mel = mel_spectrogram_torch(
+    ref_mel = _mel_spectrogram_torch(
         ref_wav_t,
-        hps.data.filter_length,
-        hps.data.n_mel_channels,
-        hps.data.sampling_rate,
-        hps.data.hop_length,
-        hps.data.win_length,
-        hps.data.mel_fmin,
-        hps.data.mel_fmax,
+        n_fft=int(hps.data.filter_length),
+        num_mels=int(hps.data.n_mel_channels),
+        sampling_rate=int(hps.data.sampling_rate),
+        hop_size=int(hps.data.hop_length),
+        win_size=int(hps.data.win_length),
+        fmin=float(hps.data.mel_fmin),
+        fmax=float(hps.data.mel_fmax),
     )
 
     src_wav, src_sr = _load_mono(str(args.src))
@@ -277,7 +339,6 @@ def main() -> int:
             net_g=net_g,
             hps=hps,
             hubert_soft=hubert_soft,
-            mel_spectrogram_torch=mel_spectrogram_torch,
             src_wav=src_wav,
             ref_mel=ref_mel,
             out_sample_rate=out_sr,
@@ -364,7 +425,6 @@ def main() -> int:
                     net_g=net_g,
                     hps=hps,
                     hubert_soft=hubert_soft,
-                    mel_spectrogram_torch=mel_spectrogram_torch,
                     src_wav=window,
                     ref_mel=ref_mel,
                     out_sample_rate=out_sr,
