@@ -77,13 +77,16 @@
     - `cfm_timesteps=10` has excellent stability + speaker similarity but is slightly slower than realtime (RTF_p95≈1.09 @ w800/h400).
     - `cfm_timesteps=8` is realtime (RTF_p95≈0.91 @ w800/h400) with similar WER and strong stability; artifacts copied to mac under `runs/vc_quest/chatterbox/user_pair_search_s8/*`. Summary updated in `docs/vc_quest.md`.
 - VC quest (2026-01-10):
+  - HiFi-VC: upstream pretrained Google Drive link (model.pt) returns HTTP 404 and `gdown` cannot retrieve it; candidate is currently **unactionable** without a new mirror/weights.
+- Infra (2026-01-10):
+  - Vast RTX 4090 instance was recreated; remote is reachable again via `ssh vastai-gpu-1` and repo can be re-pulled + venv rebuilt as needed.
+- VC quest (2026-01-10):
   - Evaluated TinyVC (uthree/tinyvc) on macOS M3 Max (MPS): extremely fast (RTF_p95≈0.28 @ ~80ms hops), but poor content preservation + low speaker similarity on our user pair in both offline+stream; reject. Artifacts in `runs/vc_quest/tinyvc/user_pair/*` and summary in `docs/vc_quest.md`.
-- Now: VC quest: continue evaluating remaining actionable low-latency VC candidates (FragmentVC, HiFi-VC), keep ranking + artifacts consistent, then build a minimal real-time runner for the winner (likely FreeVC unless a better option emerges).
+- Now: VC quest: HiFi-VC is blocked (weights missing); focus on shipping a real-time runner for the best current candidates (FreeVC / Chatterbox) and keep ranking + artifacts consistent.
 - Next:
-  - Fix Vast.ai GPU SSH connectivity (currently `ssh` to `153.198.43.222` is connection-refused on ports 54306 and 22); rerun TinyVC (optional) and future candidates on RTX 4090 once reachable.
-  - Have user listen to VC quest artifacts for FreeVC (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`), YingMusic (`runs/vc_quest/yingmusic_svc/user_pair_w600_h300_s10/*`), FACodec (`runs/vc_quest/facodec/user_pair/*`), and Vevo baseline to reconcile metrics vs perception.
-  - Evaluate FragmentVC and HiFi-VC (offline + streaming sim) using the same scorer + artifact gates.
-  - Implement a minimal real-time runner for the best timbre-VC model (start with FreeVC if no clear winner).
+  - On the new Vast instance: `git pull` and rerun the top candidates (FreeVC/Chatterbox) as needed to regenerate listen artifacts + reports.
+  - Implement a minimal real-time runner for the best timbre-VC model (start with FreeVC unless Chatterbox listening is clearly better).
+  - If we still want HiFi-VC: find an alternative public checkpoint mirror (HF/S3) or obtain weights manually.
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
   - Whether to add optional VAD/gating to skip inference on silence (quality + compute).

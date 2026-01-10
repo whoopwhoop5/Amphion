@@ -25,7 +25,7 @@ Key constraints:
 Actionable now (public repo + downloadable weights/checkpoints):
 - **TinyVC** (`uthree/tinyvc`) — real-time SOLA streaming; pretrained `encoder.pt`/`decoder.pt` on HF. (Bead: `Amphion-ehh.12`, in progress)
 - **FragmentVC** (`yistLin/FragmentVC`) — pretrained available; streaming behavior unclear (may need wrapper-level chunking).
-- **HiFi-VC** (`tinkoff-ai/hifi_vc`, archived) — checkpoint exists; likely offline-only; can still simulate streaming via wrapper.
+- ~~**HiFi-VC** (`tinkoff-ai/hifi_vc`, archived) — pretrained link currently appears dead (Google Drive 404 as of 2026-01-10).~~
 
 Likely out-of-scope for “no target training” (but can be revisited if we accept per-target models):
 - **LLVC** (`KoeAI/LLVC`) — any-to-one / per-target-speaker model.
@@ -334,10 +334,12 @@ Not actionable yet (paper/demo only or no public checkpoints):
 
 ### 14) HiFi-VC (tinkoff-ai/hifi_vc)
 - Bead: `Amphion-ehh.14`
-- Status: in_progress
+- Status: evaluated (unactionable: pretrained checkpoint unavailable)
 - Hypothesis: high-quality any-to-any VC offline; streaming may be slow/unstable due to ASR/F0 dependencies and lack of native chunking.
 - Implementation: `evaluation/vc_quest/hifivc_convert.py` + `scripts/vc_quest/hifivc_{setup,run}_user_pair_gpu.sh`
-- Next: run RTX 4090 offline + streaming sim and record WER/S-SIM/artifacts + realtime factor.
+- Blocker (2026-01-10):
+  - The official pretrained link in the upstream README (`drive.google.com/.../1oFwMeuQtwaBEyOFkyG7c7LfBQiRe3RdW`) returns HTTP 404, and `gdown` cannot retrieve it (even with `--fuzzy`).
+  - Without `model.pt`, we cannot run inference to evaluate quality/speed; revisit if a new mirror appears (HF/S3) or if we obtain weights manually.
 
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
