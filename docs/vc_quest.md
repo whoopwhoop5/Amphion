@@ -315,6 +315,21 @@ Not actionable yet (paper/demo only or no public checkpoints):
     - `fr_to_v5_stream`: S-SIM≈0.591, WER≈1.068, leak_p95≈-24.2dB, drop≈0.059
 - Conclusion: extremely fast, but **content preservation and speaker similarity are not competitive** on our user pair in both offline and stream modes. Likely reject for our live-call VC use case (unless we accept per-speaker fine-tuning/index building beyond a short reference clip).
 
+### 13) FragmentVC (yistLin/FragmentVC)
+- Bead: `Amphion-ehh.13`
+- Status: in_progress
+- Hypothesis: classic any-to-any VC baseline; may perform well offline, but streaming likely degrades because it is not designed to be causal.
+- Implementation: `evaluation/vc_quest/fragmentvc_convert.py` + `scripts/vc_quest/fragmentvc_{setup,run}_user_pair_gpu.sh`
+- Setup notes:
+  - Uses TorchScript weights from FragmentVC GitHub Release `v1.0` (`fragmentvc.pt`, `vocoder.pt`).
+  - Uses HF `facebook/wav2vec2-base` for content features (avoids building legacy fairseq).
+- Next: run RTX 4090 offline + streaming sim and record WER/S-SIM/artifacts + realtime factor.
+
+### 14) HiFi-VC (tinkoff-ai/hifi_vc)
+- Status: planned
+- Hypothesis: high-quality any-to-any VC offline; streaming may be slow/unstable due to ASR/F0 dependencies and lack of native chunking.
+- Next: integrate notebook inference into a CLI wrapper and evaluate offline + streaming sim.
+
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
   - If FreeVC v2 is acceptable: implement a minimal real-time FreeVC runner (mic->buffer->GPU inference->playback) using the selected window/hop.
