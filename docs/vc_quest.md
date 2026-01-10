@@ -317,13 +317,20 @@ Not actionable yet (paper/demo only or no public checkpoints):
 
 ### 13) FragmentVC (yistLin/FragmentVC)
 - Bead: `Amphion-ehh.13`
-- Status: in_progress
+- Status: evaluated (reject)
 - Hypothesis: classic any-to-any VC baseline; may perform well offline, but streaming likely degrades because it is not designed to be causal.
 - Implementation: `evaluation/vc_quest/fragmentvc_convert.py` + `scripts/vc_quest/fragmentvc_{setup,run}_user_pair_gpu.sh`
 - Setup notes:
   - Uses TorchScript weights from FragmentVC GitHub Release `v1.0` (`fragmentvc.pt`, `vocoder.pt`).
   - Uses HF `facebook/wav2vec2-base` for content features (avoids building legacy fairseq).
-- Next: run RTX 4090 offline + streaming sim and record WER/S-SIM/artifacts + realtime factor.
+- Results (RTX 4090):
+  - **Vocoder CUDA issue:** the provided TorchScript WaveRNN vocoder fails on CUDA due to a device-mismatched `pad_packed_sequence` indexing path. We run the vocoder on **CPU** as a workaround.
+  - Speed (offline, 10s truncated source because full user sources are 40–50s):
+    - `v5_to_fr_offline_10s`: `p95_window_sec≈102s` for 10s audio ⇒ **RTF≈10** (not viable for real-time).
+  - Quality (same 10s run):
+    - `v5_to_fr_offline_10s`: S-SIM≈0.763, WER≈0.944 (poor content preservation)
+- Artifacts: `runs/vc_quest/fragmentvc/tmp/*` (10s smoke test on GPU host).
+- Conclusion: **reject** (too slow with CPU vocoder workaround, and quality is not competitive on our pair).
 
 ### 14) HiFi-VC (tinkoff-ai/hifi_vc)
 - Status: planned
