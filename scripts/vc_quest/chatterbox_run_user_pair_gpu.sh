@@ -32,7 +32,7 @@ STREAM_EMIT_ALIGN="${STREAM_EMIT_ALIGN:-center}"
 source "${CONDA_SH}"
 conda activate "${ENV_NAME}"
 
-export HF_HOME="${HF_HOME:-${HOME}/.hf_home}"
+export HF_HOME="${HOME}/.hf_home"
 
 echo "[chatterbox_run] chatterbox_dir=${CHATTERBOX_DIR} cfm_timesteps=${CFM_TIMESTEPS} watermark=${WATERMARK}"
 echo "[chatterbox_run] Streaming: window=${STREAM_WINDOW_MS}ms hop=${STREAM_HOP_MS}ms emit_align=${STREAM_EMIT_ALIGN}"

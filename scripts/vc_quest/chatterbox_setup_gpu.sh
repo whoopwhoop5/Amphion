@@ -13,7 +13,8 @@ ENV_NAME="chatterbox"
 DEPS_DIR="${HOME}/deps"
 CHATTERBOX_DIR="${DEPS_DIR}/chatterbox"
 
-HF_HOME_DIR="${HF_HOME:-${HOME}/.hf_home}"
+# Vast images often mount /workspace on a small disk that fills up easily; keep HF cache on /root.
+HF_HOME_DIR="${HOME}/.hf_home"
 
 mkdir -p "${DEPS_DIR}"
 mkdir -p "${HF_HOME_DIR}"
@@ -63,4 +64,3 @@ for f in ("s3gen.safetensors", "conds.pt"):
 PY
 
 echo "[chatterbox_setup] Done. Activate with: source ${CONDA_SH} && conda activate ${ENV_NAME}"
-
