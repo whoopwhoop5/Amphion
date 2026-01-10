@@ -57,7 +57,13 @@ if [[ ! -d "${GENVC_DIR}" ]]; then
   git clone --depth 1 https://github.com/caizexin/GenVC.git "${GENVC_DIR}"
 fi
 
-python -m pip install -U -r "${GENVC_DIR}/requirements.txt"
+# Install GenVC deps (inference path uses TrainerModel + wandb import).
+# NOTE: Do NOT use `-U` here; GenVC's requirements.txt leaves `torchaudio` unpinned and an upgrade would pull
+# a newer PyPI wheel (and likely a mismatched torch/CUDA stack) that breaks the environment.
+python -m pip install -r "${GENVC_DIR}/requirements.txt"
+
+# Used by our streaming wrapper (VAD gating).
+python -m pip install -U webrtcvad
 
 echo "[genvc_setup] Downloading pretrained files from HF (${HF_REPO_ID}) into ${GENVC_DIR} ..."
 python - <<PY
