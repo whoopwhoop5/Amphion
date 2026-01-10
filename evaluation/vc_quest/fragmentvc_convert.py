@@ -155,7 +155,10 @@ def _infer_fragmentvc(
 
     out_mel, _attn = fragmentvc(src_feat, tgt_mel)
     out_mel = out_mel.transpose(1, 2).squeeze(0)  # [frames, 80]
-    out_wav = vocoder.generate([out_mel])[0]
+    # The TorchScript WaveRNN vocoder uses PackedSequence utilities that can
+    # break on CUDA due to device-mismatched indices. Run vocoder on CPU.
+    out_mel_cpu = out_mel.detach().cpu()
+    out_wav = vocoder.generate([out_mel_cpu])[0]
     out_np = out_wav.detach().cpu().float().numpy()
     return np.asarray(out_np, dtype=np.float32).reshape(-1)
 
@@ -217,7 +220,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     wav2vec = Wav2Vec2Model.from_pretrained(str(args.wav2vec_model)).to(device).eval()
 
     fragmentvc = torch.jit.load(str(ckpt_path)).to(device).eval()
-    vocoder = torch.jit.load(str(vocoder_path)).to(device).eval()
+    vocoder = torch.jit.load(str(vocoder_path)).to(torch.device("cpu")).eval()
 
     in_sr = 16000
     out_sr = 16000
