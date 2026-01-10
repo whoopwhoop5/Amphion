@@ -33,7 +33,11 @@ REF_FR="assets/vevo_live/user/ref_fr_female_24k_10s.wav"
 SRC_FR="assets/vevo_live/user/src_fr_female_24k.wav"
 
 CFG="${QUICKVC_DIR}/logs/quickvc/config.json"
-CKPT="${QUICKVC_DIR}/logs/quickvc/quickvc.pth"
+CKPT="$(ls -1 "${QUICKVC_DIR}/logs/quickvc"/G_*.pth 2>/dev/null | sort -V | tail -n 1)"
+if [[ -z "${CKPT}" ]]; then
+  echo "[quickvc_run] Missing generator checkpoint under ${QUICKVC_DIR}/logs/quickvc (expected G_*.pth)" >&2
+  exit 1
+fi
 
 source "${CONDA_SH}"
 conda activate "${ENV_NAME}"
@@ -139,4 +143,3 @@ python -m evaluation.vc_quest.score_outputs \
   --out_json "${RUN_DIR}/fr_to_v5_stream.report.json"
 
 echo "[quickvc_run] Wrote artifacts to ${RUN_DIR}"
-

@@ -59,7 +59,7 @@ fi
 
 mkdir -p "${QUICKVC_DIR}/logs/quickvc"
 
-if [[ ! -f "${QUICKVC_DIR}/logs/quickvc/config.json" || ! -f "${QUICKVC_DIR}/logs/quickvc/quickvc.pth" ]]; then
+if [[ ! -f "${QUICKVC_DIR}/logs/quickvc/config.json" || -z "$(ls -1 "${QUICKVC_DIR}/logs/quickvc"/G_*.pth 2>/dev/null | head -n 1)" ]]; then
   echo "[quickvc_setup] Downloading pretrained model folder into ${QUICKVC_DIR}/logs/quickvc ..."
   gdown --folder "${GDRIVE_FOLDER_URL}" -O "${QUICKVC_DIR}/logs/quickvc"
 fi
@@ -68,4 +68,3 @@ echo "[quickvc_setup] logs/quickvc summary:"
 ls -la "${QUICKVC_DIR}/logs/quickvc" | head -n 200
 
 echo "[quickvc_setup] Done. Activate with: source ${CONDA_SH} && conda activate ${ENV_NAME}"
-
