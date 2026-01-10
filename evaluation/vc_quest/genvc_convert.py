@@ -383,7 +383,15 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # GenVC's model_init expects device string ("cuda"/"cpu"), not torch.device.
     device_str = str(device)
-    model, _ = model_init(model_path, device_str)
+
+    # GenVC's configs often reference checkpoints via relative paths (e.g. `pre_trained/contentVec.pt`).
+    # Ensure these resolve inside the GenVC repo checkout.
+    prev_cwd = os.getcwd()
+    try:
+        os.chdir(genvc_dir)
+        model, _ = model_init(model_path, device_str)
+    finally:
+        os.chdir(prev_cwd)
     model.config.top_k = int(args.top_k)
 
     src_wav = load_audio(args.src, int(model.content_sample_rate))
