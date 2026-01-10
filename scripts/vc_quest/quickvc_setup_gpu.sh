@@ -40,7 +40,7 @@ conda activate "${ENV_NAME}"
 python -m pip install -U pip setuptools wheel
 
 # Torch pinned to the Vast RTX 4090 CUDA stack (CUDA 12.8 wheels work on CUDA 12.9 hosts).
-python -m pip install -U --index-url https://download.pytorch.org/whl/cu128 torch==2.9.1 torchaudio==2.9.1
+python -m pip install -U --index-url https://download.pytorch.org/whl/cu128 torch==2.9.1 torchaudio==2.9.1 torchvision==0.24.1
 
 python -m pip install -U \
   numpy==1.24.1 \
