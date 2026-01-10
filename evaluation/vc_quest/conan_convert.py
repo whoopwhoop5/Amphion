@@ -11,6 +11,7 @@ import os
 import sys
 import time
 from dataclasses import asdict, dataclass
+from importlib.machinery import ModuleSpec
 from pathlib import Path
 from typing import Optional
 
@@ -61,6 +62,26 @@ def _patch_sys_path(repo_dir: str) -> None:
     repo_dir = os.path.abspath(repo_dir)
     if repo_dir not in sys.path:
         sys.path.insert(0, repo_dir)
+
+    # Conan uses `modules.*` and `tasks.*` top-level packages, but some repos (like Amphion) also ship a
+    # regular `modules/__init__.py` package. Conan's own `modules/` (and sometimes `tasks/`) folders can be
+    # namespace-style (no `__init__.py`), which makes Python prefer the regular package later in `sys.path`.
+    # Force Conan's namespace packages to win to avoid import collisions like `ModuleNotFoundError: modules.vocoder`.
+    for ns_name in ("modules", "tasks"):
+        ns_dir = os.path.join(repo_dir, ns_name)
+        if not os.path.isdir(ns_dir):
+            continue
+        if os.path.isfile(os.path.join(ns_dir, "__init__.py")):
+            continue
+
+        sys.modules.pop(ns_name, None)
+
+        ns_mod = type(sys)(ns_name)
+        ns_spec = ModuleSpec(ns_name, loader=None, is_package=True)
+        ns_spec.submodule_search_locations = [ns_dir]  # type: ignore[attr-defined]
+        ns_mod.__spec__ = ns_spec
+        ns_mod.__path__ = list(ns_spec.submodule_search_locations)  # type: ignore[attr-defined]
+        sys.modules[ns_name] = ns_mod
 
     for mod_name in ("utils", "modules", "tasks"):
         mod = sys.modules.get(mod_name)
@@ -615,4 +636,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
