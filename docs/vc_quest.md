@@ -413,6 +413,14 @@ Not actionable yet (paper/demo only or no public checkpoints):
   - Evaluate additional VC candidates from the backlog: VTuber BowTie, AutoVC, ControlVC, PPG-VC, NeuralVC (if checkpoints are still accessible).
   - Keep FreeVC + Chatterbox as the current top timbre-VC baselines for real-time.
 
+### 18) VTuber BowTie (zju-muslab/VTuberBowTie)
+- Bead: `Amphion-6qf`
+- Status: evaluated (reject: not reference-clip zero-shot)
+- Notes:
+  - The released code is a **real-time voice changer** with a fixed set of target speakers (precomputed reference embeddings from `Data/target/pXXX/*.wav`), not a reference-clip conditioned any-to-any VC model.
+  - Running it requires downloading a large Google Drive bundle with checkpoints + target-speaker assets, and the pipeline assumes those target speakers/domains.
+  - Conclusion: not a good fit for our “mic + arbitrary reference clip” live VC requirement unless we retrain/adapt it per target voice.
+
 ## What we record for each candidate
 - **Streaming config:** sample rate, chunk/window, hop, crossfade/OLA, VAD settings, any lookahead.
 - **Speed:** mean/p95 chunk processing time, estimated RTF on RTX 4090.
