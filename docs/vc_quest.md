@@ -23,9 +23,7 @@ Key constraints:
 
 ## Next candidates (actionable backlog)
 Actionable now (public repo + downloadable weights/checkpoints):
-- **GenVC** (`caizexin/GenVC`) — LM-based zero-shot VC with built-in streaming mode (HF weights: `ZexinCai/GenVC`). (Bead: `Amphion-ehh.15`, in progress)
-- **TinyVC** (`uthree/tinyvc`) — real-time SOLA streaming; pretrained `encoder.pt`/`decoder.pt` on HF. (Bead: `Amphion-ehh.12`, in progress)
-- **FragmentVC** (`yistLin/FragmentVC`) — pretrained available; streaming behavior unclear (may need wrapper-level chunking).
+- **Conan** (`User-tian/Conan`) — chunkwise online VC via Emformer + causal vocoder; no drift; checkpoints on Google Drive. (Bead: `Amphion-ehh.16`, open)
 - ~~**HiFi-VC** (`tinkoff-ai/hifi_vc`, archived) — pretrained link currently appears dead (Google Drive 404 as of 2026-01-10).~~
 
 Likely out-of-scope for “no target training” (but can be revisited if we accept per-target models):
@@ -344,10 +342,24 @@ Not actionable yet (paper/demo only or no public checkpoints):
 
 ### 15) GenVC (caizexin/GenVC)
 - Bead: `Amphion-ehh.15`
-- Status: in_progress
+- Status: evaluated (reject)
 - Hypothesis: LM-based zero-shot VC with built-in streaming inference; may preserve content better than “tone-color” VC while supporting ~1s chunks.
 - Implementation: `evaluation/vc_quest/genvc_convert.py` + `scripts/vc_quest/genvc_{setup,run}_user_pair_gpu.sh`
-- Next: run RTX 4090 offline + streaming sim and record WER/S-SIM/artifacts + realtime factor.
+- Setup notes:
+  - GenVC uses relative paths like `pre_trained/contentVec.pt`; our wrapper runs `model_init()` from inside the GenVC repo directory so these resolve correctly.
+- Results (RTX 4090, `GenVC_small.pth`, `top_k=1`, stream `chunk_ms=1000`, `token_chunk=8`, WebRTC VAD):
+  - Speed:
+    - Offline RTF≈0.41–0.46
+    - Stream RTF≈0.44–0.50 (first emit ≈0.45s)
+  - Quality (Whisper `base` WER + WavLM speaker similarity; our French user pair):
+    - Offline:
+      - `v5_to_fr_offline`:  S-SIM≈0.928, WER≈0.963
+      - `fr_to_v5_offline`:  S-SIM≈0.895, WER≈0.955, silent_out_p95≈-26.6dB
+    - Stream:
+      - `v5_to_fr_stream`:   S-SIM≈0.923, WER≈1.000, dropout≈0.087
+      - `fr_to_v5_stream`:   S-SIM≈0.888, WER≈1.000, silent_out_p95≈-19.8dB, dropout≈0.093
+- Artifacts: `runs/vc_quest/genvc/user_pair/*`
+- Conclusion: **reject** (fast enough and stable timing, but content preservation is extremely weak on our pair; streaming also shows loud silence leakage + dropouts).
 
 ### 16) Conan (User-tian/Conan)
 - Bead: `Amphion-ehh.16`
