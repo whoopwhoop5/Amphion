@@ -19,7 +19,22 @@ Key constraints:
   - Online (these are the files you listened to and reported “noise/cutouts”):
     - `v5_to_fr_online`: S-SIM≈0.914, WER≈0.866, dropout≈0.036
     - `fr_to_v5_online`: S-SIM≈0.984, WER≈0.636, dropout≈0.123, silence_leak_p95≈-21.8dB
-  - Takeaway: Vevo offline is strong, but our current Vevo streaming artifacts (dropouts / silence leakage) show up clearly in objective metrics.
+- Takeaway: Vevo offline is strong, but our current Vevo streaming artifacts (dropouts / silence leakage) show up clearly in objective metrics.
+
+## Next candidates (actionable backlog)
+Actionable now (public repo + downloadable weights/checkpoints):
+- **TinyVC** (`uthree/tinyvc`) — real-time SOLA streaming; pretrained `encoder.pt`/`decoder.pt` on HF. (Bead: `Amphion-ehh.12`, in progress)
+- **FragmentVC** (`yistLin/FragmentVC`) — pretrained available; streaming behavior unclear (may need wrapper-level chunking).
+- **HiFi-VC** (`tinkoff-ai/hifi_vc`, archived) — checkpoint exists; likely offline-only; can still simulate streaming via wrapper.
+
+Likely out-of-scope for “no target training” (but can be revisited if we accept per-target models):
+- **LLVC** (`KoeAI/LLVC`) — any-to-one / per-target-speaker model.
+
+Unclear fit / needs investigation:
+- **SPARC** (`Berkeley-Speech-Group/Speech-Articulatory-Coding`) — may not provide an end-to-end VC pipeline.
+
+Not actionable yet (paper/demo only or no public checkpoints):
+- CONAN, RT-VC, ALO-VC, StreamVC (no checkpoint), DiffVC+ (no checkpoint), PFlow-VC (demo), ReFlow-VC (demo).
 
 ## Candidates (in progress)
 ### 1) OpenVoice (tone color conversion)
@@ -43,7 +58,7 @@ Key constraints:
 
 ### 2) FreeVC
 - Bead: `Amphion-ehh.2`
-- Status: in_progress
+- Status: evaluated (promising)
 - Hypothesis: strong zero-shot VC baseline; may stream with overlap-add.
 - Implementation: `evaluation/vc_quest/freevc_convert.py` + `scripts/vc_quest/freevc_*`
 - Setup notes:
@@ -280,6 +295,17 @@ Key constraints:
     - `runs/vc_quest/chatterbox/user_pair/*` (timesteps=10, simple run script)
     - `runs/vc_quest/chatterbox/user_pair_search_s8/*` (timesteps=8, realtime; recommended for comparison)
 - Conclusion: speaker similarity + stability are excellent, but content preservation (WER) is still worse than FreeVC on this pair. Chatterbox can be made real-time at hop=400ms by reducing `cfm_timesteps` (best so far: `cfm_timesteps=8`), but it remains behind FreeVC in intelligibility under our Whisper-WER metric.
+
+### 12) TinyVC (uthree/tinyvc)
+- Bead: `Amphion-ehh.12`
+- Status: in_progress
+- Hypothesis: TinyVC’s SOLA streaming wrapper can provide **<=600ms effective context** with high stability (small IO blocks) and competitive timbre transfer, potentially even on CPU.
+- Implementation: `evaluation/vc_quest/tinyvc_convert.py` + `scripts/vc_quest/tinyvc_*`
+- Setup notes:
+  - Pretrained weights are public on HF (`uthree/tinyvc`: `models/encoder.pt`, `models/decoder.pt`).
+  - TinyVC operates at a fixed **24kHz** sample-rate.
+  - Streaming uses TinyVC’s built-in SOLA (`module.infer.StreamInfer`) with a small IO block size (default `block_size=1920` samples ≈ 80ms).
+- Next: run the user-pair offline + streaming sim on RTX 4090 and record WER/S-SIM/artifacts + realtime factor.
 
 - Next:
   - Have user listen to FreeVC v2 artifacts (`runs/vc_quest/freevc/user_pair_search_webrtc_center/*`) and Seed-VC (`runs/vc_quest/seedvc/user_pair/*`) to sanity-check objective metrics vs perception.
