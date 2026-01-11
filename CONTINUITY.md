@@ -100,13 +100,18 @@
     - Gates: `silent_out_db_p95_gt_-25db=0/300`, `dropout_frac_voiced_gt_0p01=0/300`, `clip_frac_gt_0p001=0/300`.
     - Aggregate: WER_mean≈0.651, S-SIM(target)_mean≈0.957, p95_window_sec_mean≈0.400s (RTF≈1.0 @ hop=0.4s).
   - Updated `docs/vc_quest.md` and refreshed user-pair listen artifacts (copied to mac): `runs/vc_quest/chatterbox/user_pair/*_stream.wav`.
+- VC quest (2026-01-11):
+  - Improved realtime vc_quest tuning + call-UX evaluation (`call_score_v1`, derived latency metrics, envelope corr artifacts, optional pitch metrics) and aligned FreeVC streaming VAD to emitted region; committed+pushed (`11dfacf`).
+  - Added fast batch scorer for user-pair run dirs (`evaluation/vc_quest/score_user_pair_dir.py`) to avoid reloading Whisper/WavLM per file; committed+pushed (`b25292a`).
+  - Fixed user-pair selection correctness: `select_best.py` now reads `speaker_similarity_target` (fallback `speaker_similarity`), user-pair reports are versioned for safe resume, and glitch metric scaling uses a p99 diff baseline so `call_score_v1` is non-zero; committed+pushed (`02f1f97`). Vast rescore: `runs/vc_quest/freevc/user_pair_search_call_end/best_streaming.json` selects `w600/h300` (tier=`quality`, eligible=11/20, mean_call_score_v1≈0.149).
 - Now: VC quest: HiFi-VC is blocked (weights missing); use the French playlist to rank FreeVC vs Chatterbox (and future candidates) more robustly than the single user-pair.
 - Next:
   - On the new Vast instance: `git pull` and rerun the top candidates (FreeVC/Chatterbox) as needed to regenerate listen artifacts + reports.
+  - Use the updated call-UX metrics (`call_score_v1`, latency) to re-run FreeVC/Chatterbox playlist smoke tests (`MAX_PAIRS`) and then full runs.
   - Implement a minimal real-time runner for the best timbre-VC model (start with FreeVC unless Chatterbox listening is clearly better).
   - Continue evaluating additional actionable candidates (AutoVC / ControlVC / PPG-VC / NeuralVC if checkpoints are accessible).
   - If we still want HiFi-VC: find an alternative public checkpoint mirror (HF/S3) or obtain weights manually.
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
   - Whether to add optional VAD/gating to skip inference on silence (quality + compute).
-- Working set (files/ids/commands): `evaluation/vc_quest/*`, `scripts/vc_quest/*`, `runs/vc_quest/*`, `docs/vc_quest.md`, `bd list`, `ssh vastai-gpu-1`
+- Working set (files/ids/commands): `evaluation/vc_quest/*`, `evaluation/vevo_live/common.py`, `scripts/vc_quest/*`, `runs/vc_quest/*`, `docs/vc_quest.md`, `bd list`, `ssh vastai-gpu-1`
