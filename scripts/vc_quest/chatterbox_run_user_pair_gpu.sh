@@ -29,6 +29,17 @@ STREAM_HOP_MS="${STREAM_HOP_MS:-400}"
 STREAM_FADE_MS="${STREAM_FADE_MS:-10}"
 STREAM_EMIT_ALIGN="${STREAM_EMIT_ALIGN:-center}"
 
+GAIN_MODE="${GAIN_MODE:-match_src_rms}"
+GAIN_TARGET_DELTA_DB="${GAIN_TARGET_DELTA_DB:-5.0}"
+GAIN_MAX_BOOST_DB="${GAIN_MAX_BOOST_DB:-24.0}"
+GAIN_SMOOTHING="${GAIN_SMOOTHING:-0.0}"
+
+MASK_MODE="${MASK_MODE:-rms}"
+MASK_DB="${MASK_DB:--50.0}"
+MASK_FRAME_MS="${MASK_FRAME_MS:-10.0}"
+MASK_SMOOTH_MS="${MASK_SMOOTH_MS:-10.0}"
+PEAK_LIMIT="${PEAK_LIMIT:-0.99}"
+
 source "${CONDA_SH}"
 conda activate "${ENV_NAME}"
 
@@ -36,6 +47,8 @@ export HF_HOME="${HOME}/.hf_home"
 
 echo "[chatterbox_run] chatterbox_dir=${CHATTERBOX_DIR} cfm_timesteps=${CFM_TIMESTEPS} watermark=${WATERMARK}"
 echo "[chatterbox_run] Streaming: window=${STREAM_WINDOW_MS}ms hop=${STREAM_HOP_MS}ms emit_align=${STREAM_EMIT_ALIGN}"
+echo "[chatterbox_run] Gain: mode=${GAIN_MODE} target_delta_db=${GAIN_TARGET_DELTA_DB} max_boost_db=${GAIN_MAX_BOOST_DB} smoothing=${GAIN_SMOOTHING}"
+echo "[chatterbox_run] Mask: mode=${MASK_MODE} db=${MASK_DB} frame_ms=${MASK_FRAME_MS} smooth_ms=${MASK_SMOOTH_MS} peak_limit=${PEAK_LIMIT}"
 
 WATERMARK_FLAG="--watermark"
 if [[ "${WATERMARK}" == "0" || "${WATERMARK}" == "false" || "${WATERMARK}" == "False" ]]; then
@@ -48,6 +61,15 @@ python -m evaluation.vc_quest.chatterbox_convert \
   --seed "${SEED}" \
   --cfm_timesteps "${CFM_TIMESTEPS}" \
   ${WATERMARK_FLAG} \
+  --gain_mode "${GAIN_MODE}" \
+  --gain_target_delta_db "${GAIN_TARGET_DELTA_DB}" \
+  --gain_max_boost_db "${GAIN_MAX_BOOST_DB}" \
+  --gain_smoothing "${GAIN_SMOOTHING}" \
+  --mask_mode "${MASK_MODE}" \
+  --mask_db "${MASK_DB}" \
+  --mask_frame_ms "${MASK_FRAME_MS}" \
+  --mask_smooth_ms "${MASK_SMOOTH_MS}" \
+  --peak_limit "${PEAK_LIMIT}" \
   --ref "${REF_FR}" \
   --src "${SRC_V5}" \
   --out "${RUN_DIR}/v5_to_fr_offline.wav" \
@@ -59,6 +81,15 @@ python -m evaluation.vc_quest.chatterbox_convert \
   --seed "${SEED}" \
   --cfm_timesteps "${CFM_TIMESTEPS}" \
   ${WATERMARK_FLAG} \
+  --gain_mode "${GAIN_MODE}" \
+  --gain_target_delta_db "${GAIN_TARGET_DELTA_DB}" \
+  --gain_max_boost_db "${GAIN_MAX_BOOST_DB}" \
+  --gain_smoothing "${GAIN_SMOOTHING}" \
+  --mask_mode "${MASK_MODE}" \
+  --mask_db "${MASK_DB}" \
+  --mask_frame_ms "${MASK_FRAME_MS}" \
+  --mask_smooth_ms "${MASK_SMOOTH_MS}" \
+  --peak_limit "${PEAK_LIMIT}" \
   --ref "${REF_V5}" \
   --src "${SRC_FR}" \
   --out "${RUN_DIR}/fr_to_v5_offline.wav" \
@@ -70,6 +101,15 @@ python -m evaluation.vc_quest.chatterbox_convert \
   --seed "${SEED}" \
   --cfm_timesteps "${CFM_TIMESTEPS}" \
   ${WATERMARK_FLAG} \
+  --gain_mode "${GAIN_MODE}" \
+  --gain_target_delta_db "${GAIN_TARGET_DELTA_DB}" \
+  --gain_max_boost_db "${GAIN_MAX_BOOST_DB}" \
+  --gain_smoothing "${GAIN_SMOOTHING}" \
+  --mask_mode "${MASK_MODE}" \
+  --mask_db "${MASK_DB}" \
+  --mask_frame_ms "${MASK_FRAME_MS}" \
+  --mask_smooth_ms "${MASK_SMOOTH_MS}" \
+  --peak_limit "${PEAK_LIMIT}" \
   --ref "${REF_FR}" \
   --src "${SRC_V5}" \
   --out "${RUN_DIR}/v5_to_fr_stream.wav" \
@@ -86,6 +126,15 @@ python -m evaluation.vc_quest.chatterbox_convert \
   --seed "${SEED}" \
   --cfm_timesteps "${CFM_TIMESTEPS}" \
   ${WATERMARK_FLAG} \
+  --gain_mode "${GAIN_MODE}" \
+  --gain_target_delta_db "${GAIN_TARGET_DELTA_DB}" \
+  --gain_max_boost_db "${GAIN_MAX_BOOST_DB}" \
+  --gain_smoothing "${GAIN_SMOOTHING}" \
+  --mask_mode "${MASK_MODE}" \
+  --mask_db "${MASK_DB}" \
+  --mask_frame_ms "${MASK_FRAME_MS}" \
+  --mask_smooth_ms "${MASK_SMOOTH_MS}" \
+  --peak_limit "${PEAK_LIMIT}" \
   --ref "${REF_V5}" \
   --src "${SRC_FR}" \
   --out "${RUN_DIR}/fr_to_v5_stream.wav" \
