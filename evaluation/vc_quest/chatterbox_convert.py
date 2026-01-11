@@ -23,6 +23,7 @@ import torch
 from evaluation.vc_quest.streaming_utils import (
     AudioRingBuffer,
     apply_peak_limiter,
+    build_rms_mask,
     is_silent_rms_db,
     is_voiced_webrtcvad,
     normalize_length,
@@ -50,6 +51,10 @@ class StreamConfig:
     gain_target_delta_db: float
     gain_max_boost_db: float
     gain_smoothing: float
+    mask_mode: str
+    mask_db: float
+    mask_frame_ms: float
+    mask_smooth_ms: float
     peak_limit: float
 
 
@@ -211,6 +216,31 @@ def main(argv: Optional[list[str]] = None) -> int:
         type=float,
         default=0.9,
         help="EMA smoothing factor for gain (0=no smoothing, 0.9=slow).",
+    )
+    parser.add_argument(
+        "--mask_mode",
+        type=str,
+        default="rms",
+        choices=["off", "rms"],
+        help="Optional wrapper-level masking to suppress output during input silence (default: rms).",
+    )
+    parser.add_argument(
+        "--mask_db",
+        type=float,
+        default=-50.0,
+        help="When mask_mode=rms, frames below this dBFS threshold are suppressed.",
+    )
+    parser.add_argument(
+        "--mask_frame_ms",
+        type=float,
+        default=10.0,
+        help="When mask_mode=rms, frame size for RMS masking.",
+    )
+    parser.add_argument(
+        "--mask_smooth_ms",
+        type=float,
+        default=10.0,
+        help="When mask_mode=rms, smooth the mask with a moving average window (ms).",
     )
     parser.add_argument("--peak_limit", type=float, default=0.99)
     args = parser.parse_args(argv)
@@ -387,6 +417,17 @@ def main(argv: Optional[list[str]] = None) -> int:
                 gain_db_state *= float(np.clip(float(args.gain_smoothing), 0.0, 0.999))
 
             out_hop = apply_peak_limiter(out_hop, peak_limit=float(args.peak_limit))
+            if str(args.mask_mode) == "rms":
+                mask = build_rms_mask(
+                    vad_segment,
+                    in_sample_rate=in_sr,
+                    out_sample_rate=out_sr,
+                    out_len=hop_out,
+                    frame_ms=float(args.mask_frame_ms),
+                    threshold_db=float(args.mask_db),
+                    smooth_ms=float(args.mask_smooth_ms),
+                )
+                out_hop = (out_hop * mask).astype(np.float32, copy=False)
             out_hop = smooth_boundary_inplace(out_hop, prev_last, fade_out)
             prev_last = float(out_hop[-1]) if len(out_hop) else prev_last
 
@@ -420,6 +461,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                 gain_target_delta_db=float(args.gain_target_delta_db),
                 gain_max_boost_db=float(args.gain_max_boost_db),
                 gain_smoothing=float(args.gain_smoothing),
+                mask_mode=str(args.mask_mode),
+                mask_db=float(args.mask_db),
+                mask_frame_ms=float(args.mask_frame_ms),
+                mask_smooth_ms=float(args.mask_smooth_ms),
                 peak_limit=float(args.peak_limit),
             )
             if bool(args.stream)

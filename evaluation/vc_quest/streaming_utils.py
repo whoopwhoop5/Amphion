@@ -110,6 +110,59 @@ def rms_db(
     return _rms_db(wav, eps=eps)
 
 
+def build_rms_mask(
+    wav: np.ndarray,
+    *,
+    in_sample_rate: int,
+    out_sample_rate: int,
+    out_len: int,
+    frame_ms: float = 10.0,
+    threshold_db: float = -50.0,
+    smooth_ms: float = 0.0,
+    eps: float = 1e-9,
+) -> np.ndarray:
+    """Build a per-sample [0..1] mask (length=out_len) from input RMS frames.
+
+    Intended to suppress output during input silence even when the model hallucinates audio.
+    """
+
+    wav = np.asarray(wav, dtype=np.float32).reshape(-1)
+    if out_len <= 0:
+        return np.zeros(0, dtype=np.float32)
+    if len(wav) == 0:
+        return np.zeros(out_len, dtype=np.float32)
+
+    if in_sample_rate <= 0 or out_sample_rate <= 0:
+        raise ValueError("sample rates must be > 0")
+
+    frame_in = int(round(float(frame_ms) / 1000.0 * float(in_sample_rate)))
+    frame_out = int(round(float(frame_ms) / 1000.0 * float(out_sample_rate)))
+    frame_in = max(1, frame_in)
+    frame_out = max(1, frame_out)
+
+    n = int(np.ceil(len(wav) / float(frame_in)))
+    wav_p = np.pad(wav, (0, n * frame_in - len(wav)), mode="constant")
+    frames = wav_p.reshape(n, frame_in)
+
+    rms = np.sqrt(np.mean(frames * frames, axis=1) + eps)
+    db = 20.0 * np.log10(rms + eps)
+    mask_frames = (db >= float(threshold_db)).astype(np.float32, copy=False)
+
+    mask = np.repeat(mask_frames, frame_out).astype(np.float32, copy=False)
+    if len(mask) < out_len:
+        mask = np.pad(mask, (0, out_len - len(mask)), mode="constant")
+    else:
+        mask = mask[:out_len]
+
+    smooth_len = int(round(float(smooth_ms) / 1000.0 * float(out_sample_rate)))
+    if smooth_len > 1:
+        kernel = np.ones(smooth_len, dtype=np.float32) / float(smooth_len)
+        mask = np.convolve(mask, kernel, mode="same").astype(np.float32, copy=False)
+        mask = np.clip(mask, 0.0, 1.0)
+
+    return mask
+
+
 def is_silent_rms_db(
     wav: np.ndarray,
     *,
