@@ -95,9 +95,11 @@
     - Run + score Chatterbox: `scripts/vc_quest/chatterbox_run_fleurs_fr_playlist_gpu.sh`
     - Scoring: transcript WER/CER + hop-boundary glitch metrics + speaker similarity margin.
 - VC quest (2026-01-11):
-  - Ran the French playlist (300 pairs) on Vast RTX 4090:
-    - ChatterboxVC (`cfm_timesteps=8`, `w800/h400`) beats FreeVC on French intelligibility (WER≈0.633 vs ≈0.874) and target similarity (≈0.962 vs ≈0.930), but has more silence-leak/dropout cases.
-    - FreeVC is much faster + cleaner on silence, but degrades French content heavily.
+  - Fixed ChatterboxVC streaming artifacts (silence leakage + dropouts) via wrapper-level RMS masking + boundary smoothing + gain control.
+  - Reran FLEURS fr_fr playlist (300 pairs) on Vast RTX 4090: `runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_w800_h400_s8_mask_gain5_full/summary.json`
+    - Gates: `silent_out_db_p95_gt_-25db=0/300`, `dropout_frac_voiced_gt_0p01=0/300`, `clip_frac_gt_0p001=0/300`.
+    - Aggregate: WER_mean≈0.651, S-SIM(target)_mean≈0.957, p95_window_sec_mean≈0.400s (RTF≈1.0 @ hop=0.4s).
+  - Updated `docs/vc_quest.md` and refreshed user-pair listen artifacts (copied to mac): `runs/vc_quest/chatterbox/user_pair/*_stream.wav`.
 - Now: VC quest: HiFi-VC is blocked (weights missing); use the French playlist to rank FreeVC vs Chatterbox (and future candidates) more robustly than the single user-pair.
 - Next:
   - On the new Vast instance: `git pull` and rerun the top candidates (FreeVC/Chatterbox) as needed to regenerate listen artifacts + reports.
