@@ -126,53 +126,21 @@ done
 conda deactivate || true
 source .venv/bin/activate
 
-echo "[freevc_search] Scoring outputs..."
+echo "[freevc_search] Scoring outputs (batch)..."
 
 SCORE_ARGS=()
 if [[ "${PITCH_METRICS:-0}" == "1" ]]; then
   SCORE_ARGS+=(--pitch_metrics)
 fi
 
-python -m evaluation.vc_quest.score_outputs \
-  --ref_wav "${REF_FR}" \
-  --src_wav "${SRC_V5}" \
-  --deg_wav "${RUN_DIR}/v5_to_fr_offline.wav" \
-  --meta_json "${RUN_DIR}/v5_to_fr_offline.meta.json" \
-  --out_json "${RUN_DIR}/v5_to_fr_offline.report.json" \
+python -m evaluation.vc_quest.score_user_pair_dir \
+  --run_dir "${RUN_DIR}" \
+  --ref_fr "${REF_FR}" \
+  --src_v5 "${SRC_V5}" \
+  --ref_v5 "${REF_V5}" \
+  --src_fr "${SRC_FR}" \
+  --whisper_model base \
+  --whisper_language fr \
   "${SCORE_ARGS[@]}"
-
-python -m evaluation.vc_quest.score_outputs \
-  --ref_wav "${REF_V5}" \
-  --src_wav "${SRC_FR}" \
-  --deg_wav "${RUN_DIR}/fr_to_v5_offline.wav" \
-  --meta_json "${RUN_DIR}/fr_to_v5_offline.meta.json" \
-  --out_json "${RUN_DIR}/fr_to_v5_offline.report.json" \
-  "${SCORE_ARGS[@]}"
-
-for window_ms in ${WINDOWS_MS}; do
-  for hop_ms in ${HOPS_MS}; do
-    if [[ "${hop_ms}" -gt "${window_ms}" ]]; then
-      continue
-    fi
-    tag="w${window_ms}_h${hop_ms}"
-    python -m evaluation.vc_quest.score_outputs \
-      --ref_wav "${REF_FR}" \
-      --src_wav "${SRC_V5}" \
-      --deg_wav "${RUN_DIR}/v5_to_fr_stream_${tag}.wav" \
-      --meta_json "${RUN_DIR}/v5_to_fr_stream_${tag}.meta.json" \
-      --out_json "${RUN_DIR}/v5_to_fr_stream_${tag}.report.json" \
-      "${SCORE_ARGS[@]}"
-
-    python -m evaluation.vc_quest.score_outputs \
-      --ref_wav "${REF_V5}" \
-      --src_wav "${SRC_FR}" \
-      --deg_wav "${RUN_DIR}/fr_to_v5_stream_${tag}.wav" \
-      --meta_json "${RUN_DIR}/fr_to_v5_stream_${tag}.meta.json" \
-      --out_json "${RUN_DIR}/fr_to_v5_stream_${tag}.report.json" \
-      "${SCORE_ARGS[@]}"
-  done
-done
-
-python -m evaluation.vc_quest.select_best --run_dir "${RUN_DIR}"
 
 echo "[freevc_search] Done. Artifacts in ${RUN_DIR}"
