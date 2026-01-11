@@ -88,7 +88,13 @@
   - Evaluated QuickVC (quickvc/QuickVC-VoiceConversion) on Vast RTX 4090: very fast (offline RTF≈0.075; stream RTF≈0.094 @ w800/h400) but streaming content preservation is weak (WER≈0.91–1.0) with loud silence leakage; reject. Artifacts in `runs/vc_quest/quickvc/user_pair/*` and summary in `docs/vc_quest.md`.
 - VC quest (2026-01-10):
   - VTuber BowTie (zju-muslab/VTuberBowTie) reviewed: fixed target-speaker voice changer (not reference-clip zero-shot), so not a fit for our requirement unless retrained/adapted; reject/out-of-scope (noted in `docs/vc_quest.md`).
-- Now: VC quest: HiFi-VC is blocked (weights missing); focus on shipping a real-time runner for the best current candidates (FreeVC / Chatterbox) and keep ranking + artifacts consistent.
+- VC quest (2026-01-11):
+  - Added deterministic **French** playlist evaluation (FLEURS `fr_fr`) + playlist runners:
+    - Build playlist: `scripts/vc_quest/fleurs_fr_build_playlist.sh`
+    - Run + score FreeVC: `scripts/vc_quest/freevc_run_fleurs_fr_playlist_gpu.sh`
+    - Run + score Chatterbox: `scripts/vc_quest/chatterbox_run_fleurs_fr_playlist_gpu.sh`
+    - Scoring: transcript WER/CER + hop-boundary glitch metrics + speaker similarity margin.
+- Now: VC quest: HiFi-VC is blocked (weights missing); use the French playlist to rank FreeVC vs Chatterbox (and future candidates) more robustly than the single user-pair.
 - Next:
   - On the new Vast instance: `git pull` and rerun the top candidates (FreeVC/Chatterbox) as needed to regenerate listen artifacts + reports.
   - Implement a minimal real-time runner for the best timbre-VC model (start with FreeVC unless Chatterbox listening is clearly better).
