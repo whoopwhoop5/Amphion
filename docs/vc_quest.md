@@ -19,6 +19,16 @@ Outputs:
 - Run artifacts: `runs/vc_quest/playlists/fleurs_fr_fr/*/`
   - `wavs/*.wav`, `meta/*.json`, `summary.json`
 
+Latest results (Vast RTX 4090, streaming sim `window=800ms/hop=400ms/fade=10ms`, Whisper `base` language=`fr`, 300 pairs):
+- **FreeVC** (`runs/vc_quest/playlists/fleurs_fr_fr/freevc_w800_h400/summary.json`)
+  - WER mean≈0.874 (p95≈1.518), S-SIM(target) mean≈0.930
+  - Very fast: p95_window_sec mean≈0.065s (RTF≈0.16 @ hop=0.4s)
+  - Clean: `silent_out_db_p95_gt_-25db=0/300`, but dropouts still occur (`dropout>0.01`: 31/300)
+- **ChatterboxVC** (`runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_w800_h400_s8/summary.json`)
+  - WER mean≈0.633 (p95≈1.002), S-SIM(target) mean≈0.962
+  - Borderline realtime: p95_window_sec mean≈0.393s (RTF≈0.98 @ hop=0.4s), p95≈0.435s (RTF≈1.09)
+  - Main issue: some cases have loud silence leakage (`silent_out_db_p95_gt_-25db=31/300`) and higher dropouts (`dropout>0.01`: 45/300)
+
 ## Baseline (Vevo)
 - Model: Amphion Vevo `vevotimbre`
 - Current best live-like config (RTX 4090): `window_ms=2000`, `hop_ms=500`, `flow_matching_steps=6`, `fade_ms=10`
