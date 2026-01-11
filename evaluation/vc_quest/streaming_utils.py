@@ -100,6 +100,16 @@ def _rms_db(
     return 20.0 * float(np.log10(rms + eps))
 
 
+def rms_db(
+    wav: np.ndarray,
+    *,
+    eps: float = 1e-9,
+) -> float:
+    """RMS loudness estimate in dBFS."""
+
+    return _rms_db(wav, eps=eps)
+
+
 def is_silent_rms_db(
     wav: np.ndarray,
     *,
