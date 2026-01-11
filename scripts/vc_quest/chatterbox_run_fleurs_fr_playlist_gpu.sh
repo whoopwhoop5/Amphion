@@ -24,6 +24,11 @@ STREAM_WINDOW_MS="${STREAM_WINDOW_MS:-800}"
 STREAM_HOP_MS="${STREAM_HOP_MS:-400}"
 STREAM_FADE_MS="${STREAM_FADE_MS:-10}"
 
+GAIN_MODE="${GAIN_MODE:-match_src_rms}"
+GAIN_TARGET_DELTA_DB="${GAIN_TARGET_DELTA_DB:-10.0}"
+GAIN_MAX_BOOST_DB="${GAIN_MAX_BOOST_DB:-18.0}"
+GAIN_SMOOTHING="${GAIN_SMOOTHING:-0.0}"
+
 # 1) Ensure playlist exists (build in current python env; uses HF downloads).
 if [[ ! -f "${MANIFEST}" ]]; then
   scripts/vc_quest/fleurs_fr_build_playlist.sh
@@ -43,7 +48,11 @@ python -m evaluation.vc_quest.chatterbox_playlist_convert \
   --stream \
   --window_ms "${STREAM_WINDOW_MS}" \
   --hop_ms "${STREAM_HOP_MS}" \
-  --fade_ms "${STREAM_FADE_MS}"
+  --fade_ms "${STREAM_FADE_MS}" \
+  --gain_mode "${GAIN_MODE}" \
+  --gain_target_delta_db "${GAIN_TARGET_DELTA_DB}" \
+  --gain_max_boost_db "${GAIN_MAX_BOOST_DB}" \
+  --gain_smoothing "${GAIN_SMOOTHING}"
 
 conda deactivate || true
 
@@ -58,4 +67,3 @@ python -m evaluation.vc_quest.score_playlist \
   --whisper_language fr
 
 echo "[chatterbox_run_fleurs_fr_playlist] Wrote ${RUN_DIR}/summary.json"
-
