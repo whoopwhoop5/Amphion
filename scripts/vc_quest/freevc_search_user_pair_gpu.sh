@@ -24,8 +24,8 @@ VARIANT="${VARIANT:-freevc-24}"
 SEED="${SEED:-0}"
 
 # Streaming grid (override via env).
-WINDOWS_MS="${WINDOWS_MS:-600 800 1000}"
-HOPS_MS="${HOPS_MS:-200 300 400 600}"
+WINDOWS_MS="${WINDOWS_MS:-600 800 1000 1200}"
+HOPS_MS="${HOPS_MS:-100 150 200 300 400}"
 FADE_MS="${FADE_MS:-10}"
 
 VAD_DB="${VAD_DB:--55}"
@@ -128,19 +128,26 @@ source .venv/bin/activate
 
 echo "[freevc_search] Scoring outputs..."
 
+SCORE_ARGS=()
+if [[ "${PITCH_METRICS:-0}" == "1" ]]; then
+  SCORE_ARGS+=(--pitch_metrics)
+fi
+
 python -m evaluation.vc_quest.score_outputs \
   --ref_wav "${REF_FR}" \
   --src_wav "${SRC_V5}" \
   --deg_wav "${RUN_DIR}/v5_to_fr_offline.wav" \
   --meta_json "${RUN_DIR}/v5_to_fr_offline.meta.json" \
-  --out_json "${RUN_DIR}/v5_to_fr_offline.report.json"
+  --out_json "${RUN_DIR}/v5_to_fr_offline.report.json" \
+  "${SCORE_ARGS[@]}"
 
 python -m evaluation.vc_quest.score_outputs \
   --ref_wav "${REF_V5}" \
   --src_wav "${SRC_FR}" \
   --deg_wav "${RUN_DIR}/fr_to_v5_offline.wav" \
   --meta_json "${RUN_DIR}/fr_to_v5_offline.meta.json" \
-  --out_json "${RUN_DIR}/fr_to_v5_offline.report.json"
+  --out_json "${RUN_DIR}/fr_to_v5_offline.report.json" \
+  "${SCORE_ARGS[@]}"
 
 for window_ms in ${WINDOWS_MS}; do
   for hop_ms in ${HOPS_MS}; do
@@ -153,14 +160,16 @@ for window_ms in ${WINDOWS_MS}; do
       --src_wav "${SRC_V5}" \
       --deg_wav "${RUN_DIR}/v5_to_fr_stream_${tag}.wav" \
       --meta_json "${RUN_DIR}/v5_to_fr_stream_${tag}.meta.json" \
-      --out_json "${RUN_DIR}/v5_to_fr_stream_${tag}.report.json"
+      --out_json "${RUN_DIR}/v5_to_fr_stream_${tag}.report.json" \
+      "${SCORE_ARGS[@]}"
 
     python -m evaluation.vc_quest.score_outputs \
       --ref_wav "${REF_V5}" \
       --src_wav "${SRC_FR}" \
       --deg_wav "${RUN_DIR}/fr_to_v5_stream_${tag}.wav" \
       --meta_json "${RUN_DIR}/fr_to_v5_stream_${tag}.meta.json" \
-      --out_json "${RUN_DIR}/fr_to_v5_stream_${tag}.report.json"
+      --out_json "${RUN_DIR}/fr_to_v5_stream_${tag}.report.json" \
+      "${SCORE_ARGS[@]}"
   done
 done
 

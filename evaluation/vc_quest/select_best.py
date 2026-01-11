@@ -11,6 +11,7 @@ import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,9 @@ class PairMetrics:
     max_silent_out_db_p95: float
     max_dropout_frac_voiced: float
     rtf_p95: float
+    mean_call_score_v1: float
+    max_latency_p95_ms: float
+    max_glitch_boundary_jump_ratio_p95: float
 
 
 def _finite(x: float, default: float) -> float:
@@ -43,7 +47,9 @@ def _load_json(path: Path) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Select best streaming config from vc_quest reports.")
+    parser = argparse.ArgumentParser(
+        description="Select best streaming config from vc_quest reports."
+    )
     parser.add_argument("--run_dir", type=str, required=True)
     parser.add_argument("--out_json", type=str, default="")
     parser.add_argument("--require_rtf_p95", type=float, default=1.0)
@@ -119,6 +125,22 @@ def main(argv: list[str] | None = None) -> int:
         drop_b = _finite(rep_b.get("artifact_dropout_frac_voiced", float("nan")), 1.0)
         max_drop = max(drop_a, drop_b)
 
+        score_a = _finite(rep_a.get("call_score_v1", float("nan")), 0.0)
+        score_b = _finite(rep_b.get("call_score_v1", float("nan")), 0.0)
+        mean_call_score_v1 = 0.5 * (score_a + score_b)
+
+        lat_a = _finite(rep_a.get("latency_p95_ms", float("nan")), 1e9)
+        lat_b = _finite(rep_b.get("latency_p95_ms", float("nan")), 1e9)
+        max_latency_p95_ms = max(lat_a, lat_b)
+
+        glitch_a = _finite(
+            rep_a.get("glitch_boundary_jump_ratio_p95", float("nan")), 0.0
+        )
+        glitch_b = _finite(
+            rep_b.get("glitch_boundary_jump_ratio_p95", float("nan")), 0.0
+        )
+        max_glitch_boundary_jump_ratio_p95 = max(glitch_a, glitch_b)
+
         hop_sec = float(h) / 1000.0
         p95_a = _finite(ma.get("stats", {}).get("p95_window_sec", 0.0), 0.0)
         p95_b = _finite(mb.get("stats", {}).get("p95_window_sec", 0.0), 0.0)
@@ -133,6 +155,11 @@ def main(argv: list[str] | None = None) -> int:
                 max_silent_out_db_p95=max_leak,
                 max_dropout_frac_voiced=max_drop,
                 rtf_p95=rtf_p95,
+                mean_call_score_v1=float(mean_call_score_v1),
+                max_latency_p95_ms=float(max_latency_p95_ms),
+                max_glitch_boundary_jump_ratio_p95=float(
+                    max_glitch_boundary_jump_ratio_p95
+                ),
             )
         )
 
@@ -147,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
     max_leak_req = float(args.require_max_silent_out_db_p95)
     max_drop_req = float(args.require_max_dropout_frac_voiced)
 
-    tiers: list[tuple[str, callable[[PairMetrics], bool]]] = [
+    tiers: list[tuple[str, Callable[[PairMetrics], bool]]] = [
         (
             "quality",
             lambda r: (
@@ -158,16 +185,23 @@ def main(argv: list[str] | None = None) -> int:
         ),
         (
             "no_leak_constraint",
-            lambda r: (r.min_speaker_similarity >= min_sim_req and r.max_dropout_frac_voiced <= max_drop_req),
+            lambda r: (
+                r.min_speaker_similarity >= min_sim_req
+                and r.max_dropout_frac_voiced <= max_drop_req
+            ),
         ),
         (
             "no_dropout_constraint",
-            lambda r: (r.min_speaker_similarity >= min_sim_req and r.max_silent_out_db_p95 <= max_leak_req),
+            lambda r: (
+                r.min_speaker_similarity >= min_sim_req
+                and r.max_silent_out_db_p95 <= max_leak_req
+            ),
         ),
         (
             "no_similarity_constraint",
             lambda r: (
-                r.max_silent_out_db_p95 <= max_leak_req and r.max_dropout_frac_voiced <= max_drop_req
+                r.max_silent_out_db_p95 <= max_leak_req
+                and r.max_dropout_frac_voiced <= max_drop_req
             ),
         ),
         ("rtf_only", lambda r: True),
@@ -182,24 +216,30 @@ def main(argv: list[str] | None = None) -> int:
             eligible = subset
             break
 
-    # Sort: lower WER is better, higher min speaker sim is better, lower leak (more negative) is better.
+    # Sort for live-call UX: higher call_score is better, then lower latency, then lower WER.
     eligible.sort(
         key=lambda r: (
+            -r.mean_call_score_v1,
+            r.max_latency_p95_ms,
             r.mean_wer,
             -r.min_speaker_similarity,
             r.max_silent_out_db_p95,
             r.max_dropout_frac_voiced,
+            r.max_glitch_boundary_jump_ratio_p95,
             r.rtf_p95,
         )
     )
     best = eligible[0]
 
-    print("window_ms hop_ms mean_wer min_sim leak_p95_db drop_voiced rtf_p95")
+    print(
+        "window_ms hop_ms call_score lat_p95_ms mean_wer min_sim leak_p95_db drop_voiced glitch_p95 rtf_p95"
+    )
     print(f"[select_best] tier={tier_name} (eligible={len(eligible)}/{len(base)})")
     for r in eligible[:20]:
         print(
-            f"{r.window_ms:8d} {r.hop_ms:6d} {r.mean_wer:7.3f} {r.min_speaker_similarity:7.3f} "
-            f"{r.max_silent_out_db_p95:10.2f} {r.max_dropout_frac_voiced:10.3f} {r.rtf_p95:7.3f}"
+            f"{r.window_ms:8d} {r.hop_ms:6d} {r.mean_call_score_v1:9.3f} {r.max_latency_p95_ms:10.1f} "
+            f"{r.mean_wer:7.3f} {r.min_speaker_similarity:7.3f} {r.max_silent_out_db_p95:10.2f} "
+            f"{r.max_dropout_frac_voiced:10.3f} {r.max_glitch_boundary_jump_ratio_p95:9.3f} {r.rtf_p95:7.3f}"
         )
 
     out = {
@@ -213,6 +253,11 @@ def main(argv: list[str] | None = None) -> int:
         "best": {
             "window_ms": int(best.window_ms),
             "hop_ms": int(best.hop_ms),
+            "mean_call_score_v1": float(best.mean_call_score_v1),
+            "max_latency_p95_ms": float(best.max_latency_p95_ms),
+            "max_glitch_boundary_jump_ratio_p95": float(
+                best.max_glitch_boundary_jump_ratio_p95
+            ),
             "mean_wer": float(best.mean_wer),
             "min_speaker_similarity": float(best.min_speaker_similarity),
             "max_silent_out_db_p95": float(best.max_silent_out_db_p95),
@@ -222,7 +267,9 @@ def main(argv: list[str] | None = None) -> int:
         "candidates": [r.__dict__ for r in rows],
     }
 
-    out_path = Path(args.out_json) if args.out_json else (run_dir / "best_streaming.json")
+    out_path = (
+        Path(args.out_json) if args.out_json else (run_dir / "best_streaming.json")
+    )
     out_path.write_text(json.dumps(out, indent=2))
     print(f"Wrote: {out_path}")
     return 0

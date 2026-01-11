@@ -112,7 +112,9 @@ class SpeakerSimilarityScorer:
     ) -> None:
         self.model_name = model_name
         self.ref_wav_path = ref_wav_path
-        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device or torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
 
         self._resemblyzer_encoder = None
         self._wavlm_feature_extractor = None
@@ -126,9 +128,9 @@ class SpeakerSimilarityScorer:
             self._preprocess_wav = preprocess_wav
             self._resemblyzer_encoder = VoiceEncoder().to(self.device).eval()
             ref_wav = self._preprocess_wav(self.ref_wav_path)
-            ref_emb = torch.from_numpy(self._resemblyzer_encoder.embed_utterance(ref_wav)).to(
-                self.device
-            )
+            ref_emb = torch.from_numpy(
+                self._resemblyzer_encoder.embed_utterance(ref_wav)
+            ).to(self.device)
             self._ref_emb = F.normalize(ref_emb, dim=0)
         elif self.model_name == "wavlm":
             import librosa
@@ -138,9 +140,11 @@ class SpeakerSimilarityScorer:
             self._wavlm_feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
                 "microsoft/wavlm-base-plus-sv"
             )
-            self._wavlm_model = WavLMForXVector.from_pretrained(
-                "microsoft/wavlm-base-plus-sv"
-            ).to(self.device).eval()
+            self._wavlm_model = (
+                WavLMForXVector.from_pretrained("microsoft/wavlm-base-plus-sv")
+                .to(self.device)
+                .eval()
+            )
 
             ref_wav, _ = self._librosa.load(self.ref_wav_path, sr=16000)
             ref_inputs = self._wavlm_feature_extractor(
@@ -167,12 +171,17 @@ class SpeakerSimilarityScorer:
             assert self._resemblyzer_encoder is not None
             for p in deg_paths:
                 wav = self._preprocess_wav(p)  # type: ignore[attr-defined]
-                emb = torch.from_numpy(self._resemblyzer_encoder.embed_utterance(wav)).to(
-                    self.device
-                )
+                emb = torch.from_numpy(
+                    self._resemblyzer_encoder.embed_utterance(wav)
+                ).to(self.device)
                 emb = F.normalize(emb, dim=0)
                 scores.append(
-                    float(F.cosine_similarity(self._ref_emb, emb, dim=0).detach().cpu().item())
+                    float(
+                        F.cosine_similarity(self._ref_emb, emb, dim=0)
+                        .detach()
+                        .cpu()
+                        .item()
+                    )
                 )
             return float(np.mean(scores))
 
@@ -247,7 +256,22 @@ def compute_content_similarity_hubert(
 
 def _normalize_text_for_wer(text: str) -> str:
     # Keep spaces (WER is word-based), remove common punctuation, lower-case.
-    for ch in [".", "'", "-", ",", "!", "?", "…", "，", "。", "！", "？", "\"", "“", "”"]:
+    for ch in [
+        ".",
+        "'",
+        "-",
+        ",",
+        "!",
+        "?",
+        "…",
+        "，",
+        "。",
+        "！",
+        "？",
+        '"',
+        "“",
+        "”",
+    ]:
         text = text.replace(ch, "")
     text = " ".join(text.strip().split())
     return text.lower()
@@ -354,6 +378,8 @@ def artifact_metrics_aligned(
             "dropout_frac_voiced": float("nan"),
             "delta_db_std_voiced": float("nan"),
             "delta_db_step_p95": float("nan"),
+            "env_corr_voiced": float("nan"),
+            "env_corr_nonsilent": float("nan"),
             "clip_frac": 0.0,
         }
 
@@ -372,6 +398,8 @@ def artifact_metrics_aligned(
             "dropout_frac_voiced": float("nan"),
             "delta_db_std_voiced": float("nan"),
             "delta_db_step_p95": float("nan"),
+            "env_corr_voiced": float("nan"),
+            "env_corr_nonsilent": float("nan"),
             "clip_frac": float(np.mean(np.abs(deg) >= 0.999)),
         }
 
@@ -397,7 +425,9 @@ def artifact_metrics_aligned(
     silent = src_db < silence_in_db
     voiced = src_db > voiced_in_db
 
-    silent_out_db_mean = float(np.mean(deg_db[silent])) if np.any(silent) else float("nan")
+    silent_out_db_mean = (
+        float(np.mean(deg_db[silent])) if np.any(silent) else float("nan")
+    )
     silent_out_db_p95 = (
         float(np.percentile(deg_db[silent], 95)) if np.any(silent) else float("nan")
     )
@@ -407,9 +437,41 @@ def artifact_metrics_aligned(
     dropout_frac_voiced = float(np.mean(dropout)) if np.any(voiced) else float("nan")
 
     delta_db = deg_db - src_db
-    delta_db_std_voiced = float(np.std(delta_db[voiced])) if np.any(voiced) else float("nan")
+    delta_db_std_voiced = (
+        float(np.std(delta_db[voiced])) if np.any(voiced) else float("nan")
+    )
     delta_db_step_p95 = (
-        float(np.percentile(np.abs(np.diff(delta_db)), 95)) if len(delta_db) > 1 else 0.0
+        float(np.percentile(np.abs(np.diff(delta_db)), 95))
+        if len(delta_db) > 1
+        else 0.0
+    )
+
+    def _pearson_corr(x: np.ndarray, y: np.ndarray) -> float:
+        x = np.asarray(x, dtype=np.float32).reshape(-1)
+        y = np.asarray(y, dtype=np.float32).reshape(-1)
+        nxy = int(min(len(x), len(y)))
+        if nxy < 2:
+            return float("nan")
+
+        x = x[:nxy]
+        y = y[:nxy]
+        x = x - float(np.mean(x))
+        y = y - float(np.mean(y))
+        denom = float(np.sqrt(np.sum(x * x) * np.sum(y * y)))
+        if not np.isfinite(denom) or denom <= float(eps):
+            return float("nan")
+        return float(np.sum(x * y) / denom)
+
+    env_corr_voiced = (
+        _pearson_corr(src_db[voiced], deg_db[voiced])
+        if np.any(voiced)
+        else float("nan")
+    )
+    nonsilent = ~silent
+    env_corr_nonsilent = (
+        _pearson_corr(src_db[nonsilent], deg_db[nonsilent])
+        if np.any(nonsilent)
+        else float("nan")
     )
 
     clip_frac = float(np.mean(np.abs(deg) >= 0.999))
@@ -421,7 +483,141 @@ def artifact_metrics_aligned(
         "dropout_frac_voiced": float(dropout_frac_voiced),
         "delta_db_std_voiced": float(delta_db_std_voiced),
         "delta_db_step_p95": float(delta_db_step_p95),
+        "env_corr_voiced": float(env_corr_voiced),
+        "env_corr_nonsilent": float(env_corr_nonsilent),
         "clip_frac": float(clip_frac),
+    }
+
+
+def pitch_metrics_aligned(
+    src_aligned: np.ndarray,
+    deg_aligned: np.ndarray,
+    *,
+    sample_rate: int,
+    frame_ms: float = 10.0,
+    fmin: float = 50.0,
+    fmax: float = 500.0,
+    resample_to: int = 16000,
+    eps: float = 1e-9,
+) -> dict[str, float]:
+    """Rough pitch preservation metrics (voiced frames only).
+
+    Uses `librosa.yin` and an RMS-based voiced mask. Values are intended as relative signals
+    for tuning (not absolute "ground truth").
+    """
+
+    src = np.asarray(src_aligned, dtype=np.float32).reshape(-1)
+    deg = np.asarray(deg_aligned, dtype=np.float32).reshape(-1)
+    n = int(min(len(src), len(deg)))
+    if n <= 0 or int(sample_rate) <= 0:
+        return {
+            "f0_corr_voiced": float("nan"),
+            "f0_mae_cents_voiced_p50": float("nan"),
+            "f0_mae_cents_voiced_mean": float("nan"),
+            "f0_frames_used": 0.0,
+            "f0_frames_total": 0.0,
+        }
+
+    src = src[:n]
+    deg = deg[:n]
+
+    import librosa
+
+    sr = int(resample_to) if int(resample_to) > 0 else int(sample_rate)
+    if int(sample_rate) != sr:
+        src = librosa.resample(src, orig_sr=int(sample_rate), target_sr=sr).astype(
+            np.float32, copy=False
+        )
+        deg = librosa.resample(deg, orig_sr=int(sample_rate), target_sr=sr).astype(
+            np.float32, copy=False
+        )
+
+    hop = int(round(float(frame_ms) / 1000.0 * float(sr)))
+    hop = max(1, hop)
+    frame_length = max(int(round(0.04 * float(sr))), 4 * hop)
+
+    try:
+        f0_src = librosa.yin(
+            src,
+            fmin=float(fmin),
+            fmax=float(fmax),
+            sr=sr,
+            frame_length=frame_length,
+            hop_length=hop,
+            center=False,
+        )
+        f0_deg = librosa.yin(
+            deg,
+            fmin=float(fmin),
+            fmax=float(fmax),
+            sr=sr,
+            frame_length=frame_length,
+            hop_length=hop,
+            center=False,
+        )
+    except Exception:
+        return {
+            "f0_corr_voiced": float("nan"),
+            "f0_mae_cents_voiced_p50": float("nan"),
+            "f0_mae_cents_voiced_mean": float("nan"),
+            "f0_frames_used": 0.0,
+            "f0_frames_total": 0.0,
+        }
+
+    rms_src = librosa.feature.rms(
+        y=src, frame_length=frame_length, hop_length=hop, center=False
+    )[0]
+    src_db = 20.0 * np.log10(rms_src + float(eps))
+
+    if src_db.size == 0:
+        return {
+            "f0_corr_voiced": float("nan"),
+            "f0_mae_cents_voiced_p50": float("nan"),
+            "f0_mae_cents_voiced_mean": float("nan"),
+            "f0_frames_used": 0.0,
+            "f0_frames_total": float(min(len(f0_src), len(f0_deg))),
+        }
+
+    in_p95 = float(np.percentile(src_db, 95))
+    voiced_in_db = float(max(-45.0, in_p95 - 10.0))
+    voiced = src_db > voiced_in_db
+
+    nframes = int(min(len(f0_src), len(f0_deg), len(voiced)))
+    f0_src = np.asarray(f0_src[:nframes], dtype=np.float64)
+    f0_deg = np.asarray(f0_deg[:nframes], dtype=np.float64)
+    voiced = np.asarray(voiced[:nframes], dtype=bool)
+
+    valid = (
+        voiced & np.isfinite(f0_src) & np.isfinite(f0_deg) & (f0_src > 0) & (f0_deg > 0)
+    )
+    used = int(np.sum(valid))
+
+    if used < 3:
+        return {
+            "f0_corr_voiced": float("nan"),
+            "f0_mae_cents_voiced_p50": float("nan"),
+            "f0_mae_cents_voiced_mean": float("nan"),
+            "f0_frames_used": float(used),
+            "f0_frames_total": float(nframes),
+        }
+
+    cents_src = 1200.0 * np.log2(f0_src[valid])
+    cents_deg = 1200.0 * np.log2(f0_deg[valid])
+
+    d = cents_deg - cents_src
+    mae_p50 = float(np.median(np.abs(d)))
+    mae_mean = float(np.mean(np.abs(d)))
+
+    corr = float("nan")
+    if float(np.std(cents_src)) > 1e-6 and float(np.std(cents_deg)) > 1e-6:
+        corr = float(np.corrcoef(cents_src, cents_deg)[0, 1])
+
+    return {
+        "f0_corr_voiced": float(corr),
+        "f0_mae_cents_voiced_p50": float(mae_p50),
+        "f0_mae_cents_voiced_mean": float(mae_mean),
+        "f0_frames_used": float(used),
+        "f0_frames_total": float(nframes),
     }
 
 
@@ -450,7 +646,9 @@ def simulate_streaming(
     )
 
     engine = VevoStreamingEngine(converter)
-    engine.prepare_reference_bytes(read_reference_wav_bytes(reference_wav_path, max_sec=reference_max_sec))
+    engine.prepare_reference_bytes(
+        read_reference_wav_bytes(reference_wav_path, max_sec=reference_max_sec)
+    )
 
     src, sr = load_mono(source_wav_path)
     if sr != engine.model_sr:
@@ -516,7 +714,9 @@ def simulate_streaming(
             )
             timings.append(time.time() - t0)
 
-        out_window = normalize_length(out_window, window_samples, align=cfg.streaming.normalize_align)
+        out_window = normalize_length(
+            out_window, window_samples, align=cfg.streaming.normalize_align
+        )
         hop = out_window[-hop_samples:].astype(np.float32, copy=False)
         hop = smooth_boundary_inplace(hop, prev_last, fade_samples)
         hop = apply_peak_limiter(hop, peak_limit=float(cfg.streaming.peak_limit))

@@ -19,6 +19,7 @@ from evaluation.vevo_live.common import (
     compute_wer_whisper,
     glitch_metrics,
     load_whisper,
+    pitch_metrics_aligned,
     write_wav,
 )
 
@@ -36,11 +37,28 @@ def _resample_if_needed(wav: np.ndarray, src_sr: int, dst_sr: int) -> np.ndarray
         return wav
     import librosa
 
-    return librosa.resample(wav, orig_sr=src_sr, target_sr=dst_sr).astype(np.float32, copy=False)
+    return librosa.resample(wav, orig_sr=src_sr, target_sr=dst_sr).astype(
+        np.float32, copy=False
+    )
 
 
 def _normalize_text_for_wer(text: str) -> str:
-    for ch in [".", "'", "-", ",", "!", "?", "…", "，", "。", "！", "？", "\"", "“", "”"]:
+    for ch in [
+        ".",
+        "'",
+        "-",
+        ",",
+        "!",
+        "?",
+        "…",
+        "，",
+        "。",
+        "！",
+        "？",
+        '"',
+        "“",
+        "”",
+    ]:
         text = text.replace(ch, "")
     text = " ".join(text.strip().split())
     return text.lower()
@@ -92,23 +110,143 @@ def _char_error_rate(hyp: str, ref: str) -> float:
     return float(dp[n, m]) / float(n)
 
 
+def _clamp01(x: float) -> float:
+    if not np.isfinite(x):
+        return 0.0
+    return float(np.clip(x, 0.0, 1.0))
+
+
+def _score_lower_is_better(x: float, *, good: float, bad: float) -> float:
+    if not np.isfinite(x):
+        return 0.0
+    if good == bad:
+        return 0.0
+    if x <= good:
+        return 1.0
+    if x >= bad:
+        return 0.0
+    return float((bad - x) / (bad - good))
+
+
+def _score_higher_is_better(x: float, *, good: float, bad: float) -> float:
+    if not np.isfinite(x):
+        return 0.0
+    if good == bad:
+        return 0.0
+    if x >= good:
+        return 1.0
+    if x <= bad:
+        return 0.0
+    return float((x - bad) / (good - bad))
+
+
+def _emit_start_ms(window_ms: int, hop_ms: int, emit_align: str) -> float:
+    window_ms = int(window_ms)
+    hop_ms = int(hop_ms)
+    if window_ms <= 0 or hop_ms <= 0:
+        return float("nan")
+
+    align = str(emit_align)
+    if align == "start":
+        return 0.0
+    if align == "center":
+        return float(max(0, window_ms - hop_ms)) / 2.0
+    if align == "end":
+        return float(max(0, window_ms - hop_ms))
+    return float("nan")
+
+
+def _algo_delay_mid_ms(window_ms: int, hop_ms: int, emit_align: str) -> float:
+    emit_start = _emit_start_ms(window_ms, hop_ms, emit_align)
+    if not np.isfinite(emit_start):
+        return float("nan")
+    return float(window_ms) - (float(emit_start) + float(hop_ms) / 2.0)
+
+
+def _call_score_v1(
+    *,
+    wer: float,
+    speaker_similarity: float,
+    silent_out_db_p95: float,
+    dropout_frac_voiced: float,
+    clip_frac: float,
+    glitch_boundary_jump_ratio_p95: float,
+    rtf_p95: float,
+    latency_p95_ms: float,
+) -> float:
+    s_sim = _score_higher_is_better(speaker_similarity, good=0.97, bad=0.90)
+    s_wer = _score_lower_is_better(wer, good=0.55, bad=1.05)
+
+    s_silence = _score_lower_is_better(silent_out_db_p95, good=-40.0, bad=-25.0)
+    s_dropout = _score_lower_is_better(dropout_frac_voiced, good=0.0, bad=0.01)
+    s_clip = _score_lower_is_better(clip_frac, good=0.0, bad=0.001)
+
+    s_glitch = _score_lower_is_better(glitch_boundary_jump_ratio_p95, good=2.0, bad=8.0)
+    s_rtf = _score_lower_is_better(rtf_p95, good=0.85, bad=1.05)
+    s_latency = _score_lower_is_better(latency_p95_ms, good=150.0, bad=500.0)
+
+    quality = 0.55 * s_sim + 0.45 * s_wer
+    stability = s_silence * s_dropout * s_clip
+
+    return float(_clamp01(quality * stability * s_glitch * s_rtf * s_latency))
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Score a set of VC outputs (model-agnostic).")
-    parser.add_argument("--ref_wav", type=str, required=True, help="Target/reference wav (for speaker similarity).")
-    parser.add_argument("--src_wav", type=str, required=True, help="Source wav (for WER + artifacts).")
-    parser.add_argument("--deg_wav", type=str, required=True, help="Converted wav to score.")
-    parser.add_argument("--meta_json", type=str, default="", help="Optional meta JSON (to get delay_samples).")
-    parser.add_argument("--out_json", type=str, required=True, help="Where to write report JSON.")
+    parser = argparse.ArgumentParser(
+        description="Score a set of VC outputs (model-agnostic)."
+    )
+    parser.add_argument(
+        "--ref_wav",
+        type=str,
+        required=True,
+        help="Target/reference wav (for speaker similarity).",
+    )
+    parser.add_argument(
+        "--src_wav", type=str, required=True, help="Source wav (for WER + artifacts)."
+    )
+    parser.add_argument(
+        "--deg_wav", type=str, required=True, help="Converted wav to score."
+    )
+    parser.add_argument(
+        "--meta_json",
+        type=str,
+        default="",
+        help="Optional meta JSON (to get delay_samples).",
+    )
+    parser.add_argument(
+        "--out_json", type=str, required=True, help="Where to write report JSON."
+    )
     parser.add_argument("--whisper_model", type=str, default="base")
-    parser.add_argument("--whisper_language", type=str, default="", help="Force Whisper language (e.g., fr).")
+    parser.add_argument(
+        "--whisper_language",
+        type=str,
+        default="",
+        help="Force Whisper language (e.g., fr).",
+    )
     parser.add_argument(
         "--src_text",
         type=str,
         default="",
         help="Optional transcript for src_wav. If provided, WER/CER are computed vs this text (single ASR pass).",
     )
-    parser.add_argument("--similarity_model", type=str, default="wavlm", choices=["wavlm", "resemblyzer"])
-    parser.add_argument("--similarity_device", type=str, default="", help="Optional torch device for similarity scorer.")
+    parser.add_argument(
+        "--similarity_model",
+        type=str,
+        default="wavlm",
+        choices=["wavlm", "resemblyzer"],
+    )
+    parser.add_argument(
+        "--similarity_device",
+        type=str,
+        default="",
+        help="Optional torch device for similarity scorer.",
+    )
+    parser.add_argument(
+        "--pitch_metrics",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Compute extra pitch preservation metrics (slower).",
+    )
     args = parser.parse_args(argv)
 
     import torch
@@ -129,6 +267,8 @@ def main(argv: list[str] | None = None) -> int:
     deg, deg_sr = _load_mono(args.deg_wav)
 
     delay_samples = 0
+    meta: dict[str, Any] = {}
+    stream_cfg: dict[str, Any] = {}
     if args.meta_json:
         meta = json.loads(Path(args.meta_json).read_text())
         delay_samples = int(meta.get("stats", {}).get("delay_samples", 0))
@@ -163,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
             if whisper_lang
             else whisper_model.transcribe(args.deg_wav, verbose=False)
         )
-        deg_asr_text = _normalize_text_for_wer(deg_asr.get("text") or "")
+        deg_asr_text = _normalize_text_for_wer(str(deg_asr.get("text") or ""))
         ref_text = _normalize_text_for_wer(src_text)
         wer = _word_error_rate(deg_asr_text.split(), ref_text.split())
         cer = _char_error_rate(deg_asr_text, ref_text)
@@ -180,6 +320,42 @@ def main(argv: list[str] | None = None) -> int:
         hop_samples = int(round(float(hop_ms) / 1000.0 * float(deg_sr)))
         gm = glitch_metrics(deg, hop_samples=hop_samples)
 
+    pm: dict[str, float] = {}
+    if bool(args.pitch_metrics):
+        pm = pitch_metrics_aligned(src_trim, deg, sample_rate=deg_sr)
+
+    speed_mean_window_sec = float(
+        meta.get("stats", {}).get("mean_window_sec", 0.0) or 0.0
+    )
+    speed_p95_window_sec = float(
+        meta.get("stats", {}).get("p95_window_sec", 0.0) or 0.0
+    )
+    hop_sec = float(hop_ms) / 1000.0 if hop_ms > 0 else 0.0
+    rtf_mean = float(speed_mean_window_sec / hop_sec) if hop_sec > 0 else float("nan")
+    rtf_p95 = float(speed_p95_window_sec / hop_sec) if hop_sec > 0 else float("nan")
+
+    stream_window_ms = int(stream_cfg.get("window_ms") or 0)
+    stream_emit_align = str(stream_cfg.get("emit_align") or "")
+    algo_delay_mid_ms = _algo_delay_mid_ms(stream_window_ms, hop_ms, stream_emit_align)
+    latency_p95_ms = (
+        float(algo_delay_mid_ms + 1000.0 * speed_p95_window_sec)
+        if np.isfinite(algo_delay_mid_ms)
+        else float("nan")
+    )
+
+    call_score_v1 = _call_score_v1(
+        wer=float(wer) if np.isfinite(wer) else float("nan"),
+        speaker_similarity=float(sim),
+        silent_out_db_p95=float(am.get("silent_out_db_p95", float("nan"))),
+        dropout_frac_voiced=float(am.get("dropout_frac_voiced", float("nan"))),
+        clip_frac=float(am.get("clip_frac", float("nan"))),
+        glitch_boundary_jump_ratio_p95=float(
+            gm.get("boundary_jump_ratio_p95", float("nan"))
+        ),
+        rtf_p95=float(rtf_p95),
+        latency_p95_ms=float(latency_p95_ms),
+    )
+
     report: dict[str, Any] = {
         "speaker_similarity": float(sim),
         "wer_mode": str(wer_mode),
@@ -188,8 +364,20 @@ def main(argv: list[str] | None = None) -> int:
         "deg_asr_text": str(deg_asr_text),
         "delay_samples": int(delay_samples),
         "deg_sample_rate": int(deg_sr),
+        "speed_mean_window_sec": float(speed_mean_window_sec),
+        "speed_p95_window_sec": float(speed_p95_window_sec),
+        "rtf_mean": float(rtf_mean) if np.isfinite(rtf_mean) else float("nan"),
+        "rtf_p95": float(rtf_p95) if np.isfinite(rtf_p95) else float("nan"),
+        "algo_delay_mid_ms": float(algo_delay_mid_ms)
+        if np.isfinite(algo_delay_mid_ms)
+        else float("nan"),
+        "latency_p95_ms": float(latency_p95_ms)
+        if np.isfinite(latency_p95_ms)
+        else float("nan"),
+        "call_score_v1": float(call_score_v1),
         **{f"artifact_{k}": float(v) for k, v in am.items()},
         **{f"glitch_{k}": float(v) for k, v in gm.items()},
+        **{f"pitch_{k}": float(v) for k, v in pm.items()},
         "paths": {
             "ref_wav": str(args.ref_wav),
             "src_wav": str(args.src_wav),
