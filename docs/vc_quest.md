@@ -7,6 +7,18 @@ Key constraints:
 - Deterministic + repeatable evaluation (use existing Amphion eval metrics where possible).
 - Prefer **reference-clip** conditioning (no target-speaker training) when feasible; if training is required, document data requirements explicitly.
 
+## French-focused playlist evaluation (new)
+Single “user pair” is useful for fast iteration, but it can overfit. For a stronger, repeatable French benchmark we now support a deterministic **FLEURS fr_fr** playlist (multiple target speakers × multiple French sources), with transcript-based WER/CER and streaming glitch metrics.
+
+- Build playlist (downloads from HF, writes under `data/`): `bash scripts/vc_quest/fleurs_fr_build_playlist.sh`
+- Run + score FreeVC on the playlist (RTX 4090): `bash scripts/vc_quest/freevc_run_fleurs_fr_playlist_gpu.sh`
+- Run + score ChatterboxVC on the playlist (RTX 4090): `bash scripts/vc_quest/chatterbox_run_fleurs_fr_playlist_gpu.sh`
+
+Outputs:
+- Playlist manifest: `data/vc_quest_playlists/fleurs_fr_fr_dev_v1/manifest.json`
+- Run artifacts: `runs/vc_quest/playlists/fleurs_fr_fr/*/`
+  - `wavs/*.wav`, `meta/*.json`, `summary.json`
+
 ## Baseline (Vevo)
 - Model: Amphion Vevo `vevotimbre`
 - Current best live-like config (RTX 4090): `window_ms=2000`, `hop_ms=500`, `flow_matching_steps=6`, `fade_ms=10`
