@@ -104,6 +104,9 @@
   - Improved realtime vc_quest tuning + call-UX evaluation (`call_score_v1`, derived latency metrics, envelope corr artifacts, optional pitch metrics) and aligned FreeVC streaming VAD to emitted region; committed+pushed (`11dfacf`).
   - Added fast batch scorer for user-pair run dirs (`evaluation/vc_quest/score_user_pair_dir.py`) to avoid reloading Whisper/WavLM per file; committed+pushed (`b25292a`).
   - Fixed user-pair selection correctness: `select_best.py` now reads `speaker_similarity_target` (fallback `speaker_similarity`), user-pair reports are versioned for safe resume, and glitch metric scaling uses a p99 diff baseline so `call_score_v1` is non-zero; committed+pushed (`02f1f97`). Vast rescore: `runs/vc_quest/freevc/user_pair_search_call_end/best_streaming.json` selects `w600/h300` (tier=`quality`, eligible=11/20, mean_call_score_v1≈0.149).
+  - Rescored FLEURS fr_fr playlist runs with the updated playlist scorer (adds `call_score_v1` + latency): `summary_call_v1.json` written for:
+    - FreeVC: `runs/vc_quest/playlists/fleurs_fr_fr/freevc_w800_h400/summary_call_v1.json` (mean call_score_v1≈0.022, latency_p95_ms≈465, dropout>0.01: 31/300).
+    - Chatterbox: `runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_w800_h400_s8_mask_gain5_full/summary_call_v1.json` (mean call_score_v1=0 due to latency_p95_ms≈797 (>500ms), dropout>0.01: 0/300, rtf_p95>1: 87/300).
 - Now: VC quest: HiFi-VC is blocked (weights missing); use the French playlist to rank FreeVC vs Chatterbox (and future candidates) more robustly than the single user-pair.
 - Next:
   - On the new Vast instance: `git pull` and rerun the top candidates (FreeVC/Chatterbox) as needed to regenerate listen artifacts + reports.
