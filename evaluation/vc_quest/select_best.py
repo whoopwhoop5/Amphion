@@ -46,6 +46,12 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
+def _target_similarity(rep: dict) -> float:
+    if "speaker_similarity_target" in rep:
+        return _finite(rep.get("speaker_similarity_target", float("nan")), 0.0)
+    return _finite(rep.get("speaker_similarity", float("nan")), 0.0)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Select best streaming config from vc_quest reports."
@@ -113,8 +119,8 @@ def main(argv: list[str] | None = None) -> int:
         wer_b = _finite(rep_b.get("wer", float("nan")), 1.0)
         mean_wer = 0.5 * (wer_a + wer_b)
 
-        sim_a = _finite(rep_a.get("speaker_similarity", float("nan")), 0.0)
-        sim_b = _finite(rep_b.get("speaker_similarity", float("nan")), 0.0)
+        sim_a = _target_similarity(rep_a)
+        sim_b = _target_similarity(rep_b)
         min_sim = min(sim_a, sim_b)
 
         leak_a = _finite(rep_a.get("artifact_silent_out_db_p95", float("nan")), 0.0)

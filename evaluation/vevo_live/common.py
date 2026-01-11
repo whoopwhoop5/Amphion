@@ -334,7 +334,11 @@ def glitch_metrics(
         return {"boundary_jump_ratio_mean": 0.0, "boundary_jump_ratio_p95": 0.0}
 
     diffs = np.abs(np.diff(wav))
-    base = max(float(np.median(diffs)), 1e-3)
+    if diffs.size == 0:
+        return {"boundary_jump_ratio_mean": 0.0, "boundary_jump_ratio_p95": 0.0}
+
+    # Use a high percentile baseline so typical speech dynamics don't look like huge "jumps".
+    base = max(float(np.percentile(diffs, 99)), 1e-3)
 
     jumps = []
     for idx in range(hop_samples, len(wav), hop_samples):

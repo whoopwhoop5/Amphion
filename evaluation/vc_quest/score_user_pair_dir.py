@@ -22,6 +22,22 @@ from evaluation.vevo_live.common import (
     write_wav,
 )
 
+REPORT_VERSION = 1
+
+
+def _report_is_current(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        rep = json.loads(path.read_text())
+    except Exception:
+        return False
+    try:
+        v = int(rep.get("report_version") or 0)
+    except Exception:
+        return False
+    return v == REPORT_VERSION
+
 
 def _load_mono(path: str) -> tuple[np.ndarray, int]:
     wav, sr = sf.read(path, dtype="float32")
@@ -371,6 +387,7 @@ def _score_one(
     )
 
     report: dict[str, Any] = {
+        "report_version": int(REPORT_VERSION),
         "speaker_similarity_target": float(sim_tgt),
         "speaker_similarity_source": float(sim_src),
         "speaker_similarity_margin": float(sim_margin),
@@ -490,7 +507,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         rep = run_dir / f"{stem}.report.json"
         if not deg.exists() or not meta.exists():
             continue
-        if bool(args.resume) and rep.exists():
+        if bool(args.resume) and _report_is_current(rep):
             continue
         _score_one(
             whisper_model=whisper_model,
@@ -516,7 +533,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             rep = run_dir / f"{prefix}_stream_w{w}_h{h}.report.json"
             if not deg.exists() or not meta.exists():
                 continue
-            if bool(args.resume) and rep.exists():
+            if bool(args.resume) and _report_is_current(rep):
                 continue
             _score_one(
                 whisper_model=whisper_model,
