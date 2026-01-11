@@ -245,10 +245,13 @@ def main(argv: Optional[list[str]] = None) -> int:
 
                 if args.emit_align == "start":
                     emit_start_out = 0
+                    emit_start_in = 0
                 elif args.emit_align == "center":
                     emit_start_out = max(0, (window_out - hop_out) // 2)
+                    emit_start_in = max(0, (window_in - hop_in) // 2)
                 elif args.emit_align == "end":
                     emit_start_out = max(0, window_out - hop_out)
+                    emit_start_in = max(0, window_in - hop_in)
                 else:
                     raise ValueError(f"Unknown emit_align: {args.emit_align}")
 
@@ -278,31 +281,37 @@ def main(argv: Optional[list[str]] = None) -> int:
 
                     window = ring.read_last(window_in)
 
+                    # VAD should run on the emitted region (emit_align aware), not the current hop.
+                    vad_segment = window[emit_start_in : emit_start_in + hop_in]
+
                     vad_mode = str(args.vad_mode)
+                    silent_rms = bool(
+                        float(args.vad_db) > -200.0
+                        and is_silent_rms_db(
+                            vad_segment,
+                            sample_rate=in_sr,
+                            frame_ms=float(args.vad_frame_ms),
+                            silence_db=float(args.vad_db),
+                        )
+                    )
+
                     if vad_mode == "off":
                         voiced = True
                     elif vad_mode == "rms":
-                        voiced = not (
-                            float(args.vad_db) > -200.0
-                            and is_silent_rms_db(
-                                hop,
-                                sample_rate=in_sr,
-                                frame_ms=float(args.vad_frame_ms),
-                                silence_db=float(args.vad_db),
-                            )
-                        )
+                        voiced = not silent_rms
                     elif vad_mode == "webrtc":
-                        voiced = is_voiced_webrtcvad(
-                            hop,
+                        webrtc_voiced = is_voiced_webrtcvad(
+                            vad_segment,
                             sample_rate=in_sr,
                             frame_ms=int(args.vad_webrtc_frame_ms),  # type: ignore[arg-type]
                             aggressiveness=int(args.vad_webrtc_aggressiveness),
                             min_voiced_ratio=float(args.vad_webrtc_min_voiced_ratio),
                         )
+                        voiced = bool(webrtc_voiced) and (not silent_rms)
                     else:
                         raise ValueError(f"Unknown vad_mode: {vad_mode}")
 
-                    if not voiced and hangover_left > 0:
+                    if not voiced and hangover_left > 0 and (not silent_rms):
                         voiced = True
                         hangover_left -= 1
                     elif voiced:
@@ -394,4 +403,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
