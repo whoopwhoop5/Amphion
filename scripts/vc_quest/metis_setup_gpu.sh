@@ -48,6 +48,7 @@ python -m pip install -U \
   librosa \
   tqdm \
   webrtcvad \
+  json5 \
   safetensors \
   "transformers==4.41.2" \
   huggingface_hub \
@@ -91,4 +92,3 @@ print("[metis_setup] OK: downloads complete")
 PY
 
 echo "[metis_setup] Done. Activate with: source ${CONDA_SH} && conda activate ${ENV_NAME}"
-
