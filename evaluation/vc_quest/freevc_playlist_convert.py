@@ -472,7 +472,22 @@ def main(argv: Optional[list[str]] = None) -> int:
 
             out = np.concatenate(outs) if outs else np.zeros(0, dtype=np.float32)
             sf.write(str(out_wav), out, out_sr)
-            delay_samples = int(emit_start_out)
+
+            # Align output timeline to source for downstream scoring.
+            #
+            # If we drop warmup hops (recommended), the output file starts at the first emitted
+            # segment, which is offset by the number of warmup hops. The emitted segment itself
+            # can start inside the window depending on emit_align.
+            #
+            # This matters when window_ms is not an integer multiple of hop_ms.
+            if bool(args.drop_warmup_hops):
+                delay_samples = int(
+                    int(warmup_hops) * int(hop_out)
+                    + (int(hop_out) - int(window_out))
+                    + int(emit_start_out)
+                )
+            else:
+                delay_samples = int(emit_start_out)
 
         cfg = {
             "freevc_dir": str(freevc_dir),

@@ -436,7 +436,18 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         out = np.concatenate(outs) if outs else np.zeros(0, dtype=np.float32)
         sf.write(args.out, out, out_sr)
-        delay_samples = int(emit_start_out)
+
+        # Align output timeline to source for downstream scoring.
+        # See FreeVC notes: when window_ms is not a multiple of hop_ms, warmup hops shift the
+        # first emitted segment in time if we drop warmup hops.
+        if bool(args.drop_warmup_hops):
+            delay_samples = int(
+                int(warmup_hops) * int(hop_out)
+                + (int(hop_out) - int(window_out))
+                + int(emit_start_out)
+            )
+        else:
+            delay_samples = int(emit_start_out)
 
     if args.meta_json:
         meta_p = Path(args.meta_json)
