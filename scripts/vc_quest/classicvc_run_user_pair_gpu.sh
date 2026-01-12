@@ -29,6 +29,11 @@ STREAM_HOP_MS="${STREAM_HOP_MS:-400}"
 STREAM_FADE_MS="${STREAM_FADE_MS:-10}"
 STREAM_EMIT_ALIGN="${STREAM_EMIT_ALIGN:-end}"
 
+ABSOLUTE_PITCH="${ABSOLUTE_PITCH:-1}"
+ESTIMATE_ENERGY="${ESTIMATE_ENERGY:-0}"
+PITCH_SHIFT="${PITCH_SHIFT:-0.0}"
+CONTENT_EXPAND_RATE="${CONTENT_EXPAND_RATE:-0.1}"
+
 VAD_MODE="${VAD_MODE:-rms}"
 VAD_DB="${VAD_DB:--55}"
 VAD_FRAME_MS="${VAD_FRAME_MS:-10}"
@@ -57,12 +62,24 @@ echo "[classicvc_run] Streaming: window=${STREAM_WINDOW_MS}ms hop=${STREAM_HOP_M
 echo "[classicvc_run] VAD: mode=${VAD_MODE} db=${VAD_DB} hangover_ms=${VAD_HANGOVER_MS}"
 echo "[classicvc_run] Gain: mode=${GAIN_MODE} target_delta_db=${GAIN_TARGET_DELTA_DB} max_boost_db=${GAIN_MAX_BOOST_DB} smoothing=${GAIN_SMOOTHING}"
 echo "[classicvc_run] Mask: mode=${MASK_MODE} db=${MASK_DB} frame_ms=${MASK_FRAME_MS} smooth_ms=${MASK_SMOOTH_MS} peak_limit=${PEAK_LIMIT}"
+echo "[classicvc_run] MMCXLI: absolute_pitch=${ABSOLUTE_PITCH} estimate_energy=${ESTIMATE_ENERGY} pitch_shift=${PITCH_SHIFT} content_expand_rate=${CONTENT_EXPAND_RATE}"
+
+EXTRA_ARGS=()
+if [[ "${ABSOLUTE_PITCH}" == "0" ]]; then
+  EXTRA_ARGS+=(--no-absolute_pitch)
+fi
+if [[ "${ESTIMATE_ENERGY}" == "1" ]]; then
+  EXTRA_ARGS+=(--estimate_energy)
+fi
+EXTRA_ARGS+=(--pitch_shift "${PITCH_SHIFT}")
+EXTRA_ARGS+=(--content_expand_rate "${CONTENT_EXPAND_RATE}")
 
 python -m evaluation.vc_quest.classicvc_convert \
   --mmcxli_dir "${MMCXLI_DIR}" \
   --model_device "${MODEL_DEVICE}" \
   --seed "${SEED}" \
   --ref_max_sec "${REF_MAX_SEC}" \
+  "${EXTRA_ARGS[@]}" \
   --ref "${REF_FR}" \
   --src "${SRC_V5}" \
   --out "${RUN_DIR}/v5_to_fr_offline.wav" \
@@ -73,6 +90,7 @@ python -m evaluation.vc_quest.classicvc_convert \
   --model_device "${MODEL_DEVICE}" \
   --seed "${SEED}" \
   --ref_max_sec "${REF_MAX_SEC}" \
+  "${EXTRA_ARGS[@]}" \
   --ref "${REF_V5}" \
   --src "${SRC_FR}" \
   --out "${RUN_DIR}/fr_to_v5_offline.wav" \
@@ -83,6 +101,7 @@ python -m evaluation.vc_quest.classicvc_convert \
   --model_device "${MODEL_DEVICE}" \
   --seed "${SEED}" \
   --ref_max_sec "${REF_MAX_SEC}" \
+  "${EXTRA_ARGS[@]}" \
   --gain_mode "${GAIN_MODE}" \
   --gain_target_delta_db "${GAIN_TARGET_DELTA_DB}" \
   --gain_max_boost_db "${GAIN_MAX_BOOST_DB}" \
@@ -114,6 +133,7 @@ python -m evaluation.vc_quest.classicvc_convert \
   --model_device "${MODEL_DEVICE}" \
   --seed "${SEED}" \
   --ref_max_sec "${REF_MAX_SEC}" \
+  "${EXTRA_ARGS[@]}" \
   --gain_mode "${GAIN_MODE}" \
   --gain_target_delta_db "${GAIN_TARGET_DELTA_DB}" \
   --gain_max_boost_db "${GAIN_MAX_BOOST_DB}" \
@@ -172,4 +192,3 @@ python -m evaluation.vc_quest.score_outputs \
   --out_json "${RUN_DIR}/fr_to_v5_stream.report.json"
 
 echo "[classicvc_run] Wrote artifacts to ${RUN_DIR}"
-

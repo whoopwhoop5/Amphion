@@ -272,6 +272,30 @@ def main(argv: Optional[list[str]] = None) -> int:
         default=10.0,
         help="Trim reference audio to this many seconds (0 disables).",
     )
+    parser.add_argument(
+        "--absolute_pitch",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use target-conditioned absolute pitch prediction (MMCXLI f0n predictor).",
+    )
+    parser.add_argument(
+        "--estimate_energy",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use target-conditioned energy prediction (MMCXLI f0n predictor).",
+    )
+    parser.add_argument(
+        "--pitch_shift",
+        type=float,
+        default=0.0,
+        help="Pitch shift in semitones (applied after f0 selection).",
+    )
+    parser.add_argument(
+        "--content_expand_rate",
+        type=float,
+        default=0.1,
+        help="Optional ContentVec tail expansion rate (0 disables; MMCXLI default is 0.1).",
+    )
 
     parser.add_argument("--ref", type=str, required=True, help="Target/reference voice wav")
     parser.add_argument("--src", type=str, required=True, help="Source wav to convert")
@@ -329,6 +353,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     vc_cfg["model"]["model_device"] = str(args.model_device)
     vc_cfg["auto_encode"] = False
     vc_cfg["spec_rt_o"] = 2  # avoid GUI-only plotting paths
+    vc_cfg["absolute_pitch"] = bool(args.absolute_pitch)
+    vc_cfg["estimate_energy"] = bool(args.estimate_energy)
+    vc_cfg["pitch_shift"] = float(args.pitch_shift)
+    vc_cfg["content_expand_rate"] = float(args.content_expand_rate)
 
     # Resolve weights (MMCXLI expects relative paths by default).
     wdir = Path(mmcxli_dir) / "weights"
@@ -573,4 +601,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

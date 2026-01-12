@@ -27,6 +27,11 @@ STREAM_FADE_MS="${STREAM_FADE_MS:-10}"
 
 EMIT_ALIGN="${EMIT_ALIGN:-end}"
 
+ABSOLUTE_PITCH="${ABSOLUTE_PITCH:-1}"
+ESTIMATE_ENERGY="${ESTIMATE_ENERGY:-0}"
+PITCH_SHIFT="${PITCH_SHIFT:-0.0}"
+CONTENT_EXPAND_RATE="${CONTENT_EXPAND_RATE:-0.1}"
+
 VAD_MODE="${VAD_MODE:-rms}"
 VAD_DB="${VAD_DB:--55}"
 VAD_FRAME_MS="${VAD_FRAME_MS:-10}"
@@ -58,6 +63,16 @@ fi
 source "${CONDA_SH}"
 conda activate "${ENV_NAME}"
 
+EXTRA_ARGS=()
+if [[ "${ABSOLUTE_PITCH}" == "0" ]]; then
+  EXTRA_ARGS+=(--no-absolute_pitch)
+fi
+if [[ "${ESTIMATE_ENERGY}" == "1" ]]; then
+  EXTRA_ARGS+=(--estimate_energy)
+fi
+EXTRA_ARGS+=(--pitch_shift "${PITCH_SHIFT}")
+EXTRA_ARGS+=(--content_expand_rate "${CONTENT_EXPAND_RATE}")
+
 python -m evaluation.vc_quest.classicvc_playlist_convert \
   --manifest "${MANIFEST}" \
   --out_dir "${RUN_DIR}" \
@@ -65,6 +80,7 @@ python -m evaluation.vc_quest.classicvc_playlist_convert \
   --model_device "${MODEL_DEVICE}" \
   --seed "${SEED}" \
   --ref_max_sec "${REF_MAX_SEC}" \
+  "${EXTRA_ARGS[@]}" \
   --stream \
   --window_ms "${STREAM_WINDOW_MS}" \
   --hop_ms "${STREAM_HOP_MS}" \
@@ -110,4 +126,3 @@ python -m evaluation.vc_quest.score_playlist \
   "${SCORE_ARGS[@]}"
 
 echo "[classicvc_run_fleurs_fr_playlist] Wrote ${RUN_DIR}/summary.json"
-
