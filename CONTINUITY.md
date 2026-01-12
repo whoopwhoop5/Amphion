@@ -120,14 +120,18 @@
   - FreeVC VAD/fade sweep (Vast, MAX_PAIRS=50): hangover/aggr/db/fade tweaks did not reduce voiced-dropout cases (dropout>0.01 stayed 3/50 across runs), suggesting dropouts are largely model-inherent at this config.
   - Added FreeVC gain/mask controls to streaming conversion + scripts (commit `63467d4`) and smoke-tested: gain+mask improves glitch metrics and modestly improves call_score on the smoke subset, but does not eliminate voiced-dropout cases.
   - Added “known-good” preset runner scripts for FLEURS fr_fr: `scripts/vc_quest/presets/*` (FreeVC: quality vs call-latency; Chatterbox: quality reference).
-  - Added new competitor integrations (not yet benchmarked on Vast): ClassicVC/MMCXLI (ONNX) and Metis (metis_vc + metis_omni) offline + streaming-sim converters + playlist runners + Vast setup/run scripts. Commits: `0c84cb4`, `4a188e3`.
-- Now: VC quest: FreeVC remains the only call-latency candidate (≈270–320ms latency_p95 on Vast with emit_align=end), but intelligibility (Whisper WER) + voiced-dropout cases remain the main blockers.
+- VC quest (2026-01-12):
+  - Benchmarked new competitors on Vast RTX 4090 + updated docs/presets:
+    - ClassicVC/MMCXLI full 300 (audio_ref): `runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w800_h400_end_full/summary.json` call_score_v1 mean≈0.211, latency_p95_ms mean≈222, WER mean≈0.768, S-SIM(target) mean≈0.899.
+    - Metis VC/Omni: rejected for call UX (RTF_p95≈5, latency≈2s, very high WER, call_score_v1=0).
+    - Added ClassicVC preset script: `scripts/vc_quest/presets/classicvc_fleurs_fr_call_latency.sh` and updated `docs/vc_quest.md` with audio_ref playlist results.
+- Now: VC quest: ClassicVC/MMCXLI is currently the best call-latency candidate on FLEURS fr_fr (lower latency + better WER than FreeVC), but speaker similarity is lower than FreeVC/Chatterbox. Chatterbox remains the quality/stability reference but has ~0.8s latency at the realtime config (call_score_v1=0 under strict threshold).
 - Next:
-  - Run Vast smoke evals for ClassicVC/MMCXLI + Metis on user_pair + FLEURS fr_fr (MAX_PAIRS=50), then full 300 if promising.
-  - Decide whether to adopt gain/mask for FreeVC and re-run a full 300-pair evaluation for the best settings.
+  - Tune ClassicVC window/hop (and possibly gain/mask) to improve similarity/WER while keeping latency_p95_ms < 500ms; run smoke MAX_PAIRS=50 then full 300 for finalists.
+  - Decide whether to adopt FreeVC gain/mask and rerun a full 300-pair evaluation for the best settings.
   - Add “worst cases” surfacing (case IDs/paths) for dropouts/glitches to speed subjective spot-checking.
   - Revisit Chatterbox call-latency only if we can reduce algorithmic delay or inference time without WER collapse; otherwise treat as hard-limited for call UX.
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
   - Whether to add optional VAD/gating to skip inference on silence (quality + compute).
-- Working set (files/ids/commands): `evaluation/vc_quest/*`, `evaluation/vevo_live/common.py`, `scripts/vc_quest/*`, `runs/vc_quest/*`, `docs/vc_quest.md`, `bd list`, `ssh vastai-gpu-1`
+- Working set (files/ids/commands): `evaluation/vc_quest/*`, `scripts/vc_quest/*`, `scripts/vc_quest/presets/*`, `runs/vc_quest/*`, `docs/vc_quest.md`, `bd list`, `ssh vastai-gpu-1`

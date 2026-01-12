@@ -20,6 +20,7 @@ They are meant to be the “known good” starting points.
 
 - **FreeVC (quality-first, decent call UX):** `bash scripts/vc_quest/presets/freevc_fleurs_fr_quality.sh`
 - **FreeVC (call-latency-first):** `bash scripts/vc_quest/presets/freevc_fleurs_fr_call_latency.sh`
+- **ClassicVC/MMCXLI (call UX candidate):** `bash scripts/vc_quest/presets/classicvc_fleurs_fr_call_latency.sh`
 - **ChatterboxVC (quality/stability reference):** `bash scripts/vc_quest/presets/chatterbox_fleurs_fr_quality.sh`
 
 Tips:
@@ -31,15 +32,18 @@ Outputs:
 - Run artifacts: `runs/vc_quest/playlists/fleurs_fr_fr/*/`
   - `wavs/*.wav`, `meta/*.json`, `summary.json`
 
-Latest results (Vast RTX 4090, streaming sim `window=800ms/hop=400ms/fade=10ms`, Whisper `base` language=`fr`, 300 pairs):
-- **FreeVC** (`runs/vc_quest/playlists/fleurs_fr_fr/freevc_w800_h400/summary.json`)
-  - WER mean≈0.874 (p95≈1.518), S-SIM(target) mean≈0.930
-  - Very fast: p95_window_sec mean≈0.065s (RTF≈0.16 @ hop=0.4s)
-  - Clean: `silent_out_db_p95_gt_-25db=0/300`, but dropouts still occur (`dropout>0.01`: 31/300)
-- **ChatterboxVC** (masked, `runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_w800_h400_s8_mask_gain5_full/summary.json`)
-  - WER mean≈0.651 (p95≈1.000), S-SIM(target) mean≈0.957
-  - Borderline realtime: p95_window_sec mean≈0.400s (RTF≈1.00 @ hop=0.4s), p95≈0.448s (RTF≈1.12)
-  - Fixed: `silent_out_db_p95_gt_-25db=0/300`, `dropout>0.01=0/300`, `clip>0.001=0/300`
+Latest results (Vast RTX 4090, WER_MODE=`audio_ref`, Whisper `base` language=`fr`, 300 pairs):
+- **ClassicVC/MMCXLI** (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w800_h400_end_full/summary.json`)
+  - call_score_v1 mean≈0.211, latency_p95_ms mean≈222, rtf_p95 mean≈0.055
+  - WER mean≈0.768, S-SIM(target) mean≈0.899
+  - Stable: dropouts (`dropout>0.01`): 3/300, silence/clip gates 0/300
+- **FreeVC** (call-latency preset, `runs/vc_quest/playlists/fleurs_fr_fr/freevc_w800_h400_end_full/summary_audio_ref.json`)
+  - call_score_v1 mean≈0.122, latency_p95_ms mean≈272, rtf_p95 mean≈0.179
+  - WER mean≈0.934, S-SIM(target) mean≈0.931
+  - Main issue: dropouts (`dropout>0.01`): 30/300
+- **ChatterboxVC** (quality reference, masked, `runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_w800_h400_s8_mask_gain5_full/summary_audio_ref.json`)
+  - WER mean≈0.617, S-SIM(target) mean≈0.957, dropouts 0/300
+  - Not call-latency under `call_score_v1` (latency_p95_ms≈797ms => call_score_v1=0)
 
 ## Baseline (Vevo)
 - Model: Amphion Vevo `vevotimbre`
@@ -57,7 +61,8 @@ Latest results (Vast RTX 4090, streaming sim `window=800ms/hop=400ms/fade=10ms`,
 
 ## Next candidates (actionable backlog)
 Actionable now (public repo + downloadable weights/checkpoints):
-- **Conan** (`User-tian/Conan`) — chunkwise online VC via Emformer + causal vocoder; no drift; checkpoints on Google Drive. (Bead: `Amphion-ehh.16`, open)
+- **ClassicVC/MMCXLI** (`lyodos/classic-vc` + `lyodos/mmcxli`) — ONNX real-time VC (call-UX candidate). (Bead: `Amphion-40r`)
+- **Noro** — noise-robust zero-shot VC. (Bead: `Amphion-3ds`)
 - ~~**HiFi-VC** (`tinkoff-ai/hifi_vc`, archived) — pretrained link currently appears dead (Google Drive 404 as of 2026-01-10).~~
 
 Likely out-of-scope for “no target training” (but can be revisited if we accept per-target models):
@@ -454,6 +459,31 @@ Not actionable yet (paper/demo only or no public checkpoints):
   - The released code is a **real-time voice changer** with a fixed set of target speakers (precomputed reference embeddings from `Data/target/pXXX/*.wav`), not a reference-clip conditioned any-to-any VC model.
   - Running it requires downloading a large Google Drive bundle with checkpoints + target-speaker assets, and the pipeline assumes those target speakers/domains.
   - Conclusion: not a good fit for our “mic + arbitrary reference clip” live VC requirement unless we retrain/adapt it per target voice.
+
+### 19) ClassicVC/MMCXLI (ONNX real-time VC)
+- Bead: `Amphion-40r`
+- Status: evaluated (strong call-UX candidate)
+- Implementation: `evaluation/vc_quest/classicvc_convert.py`, `evaluation/vc_quest/classicvc_playlist_convert.py`, `scripts/vc_quest/classicvc_*`
+- Setup notes:
+  - Uses ONNXRuntime-GPU with MMCXLI’s real-time VC engine.
+  - Weights are pulled from HF (`lyodos/classic-vc`) by `scripts/vc_quest/classicvc_setup_gpu.sh`.
+
+- Results (Vast RTX 4090, FLEURS fr_fr, stream sim `w800/h400`, `emit_align=end`, WER_MODE=`audio_ref`, 300 pairs):
+  - `runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w800_h400_end_full/summary.json`
+  - call_score_v1 mean≈0.211, latency_p95_ms mean≈222, rtf_p95 mean≈0.055
+  - WER mean≈0.768, S-SIM(target) mean≈0.899
+  - Gates: dropouts (`dropout>0.01`): 3/300, silence/clip gates 0/300
+
+- Conclusion: currently our best “call-latency + intelligibility” pipeline on the French playlist. Speaker similarity is lower than FreeVC/Chatterbox, but content is stronger than FreeVC and latency is far better than Chatterbox.
+
+### 20) Metis-VC / Metis-Omni (prompted codec-token VC)
+- Bead: `Amphion-pyb`
+- Status: evaluated (reject for call UX)
+- Implementation: `evaluation/vc_quest/metis_convert.py`, `evaluation/vc_quest/metis_playlist_convert.py`, `scripts/vc_quest/metis_*`
+- Results (Vast RTX 4090, user-pair streaming sim):
+  - Extremely slow (RTF_p95 ≈ 5) and high latency (~2s), with very high WER + loud artifacts.
+  - `call_score_v1` clamped to 0.0.
+- Conclusion: not viable for live calls without major architectural/serving changes (iterative sampling dominates).
 
 ## What we record for each candidate
 - **Streaming config:** sample rate, chunk/window, hop, crossfade/OLA, VAD settings, any lookahead.
