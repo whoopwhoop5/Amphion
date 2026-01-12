@@ -50,6 +50,7 @@ python -m pip install -U \
   webrtcvad \
   json5 \
   ruamel.yaml \
+  six \
   safetensors \
   "transformers==4.41.2" \
   huggingface_hub \
