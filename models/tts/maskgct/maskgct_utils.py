@@ -17,12 +17,14 @@ from models.tts.maskgct.maskgct_t2s import MaskGCT_T2S
 from models.codec.amphion_codec.codec import CodecEncoder, CodecDecoder
 from transformers import Wav2Vec2BertModel
 
-from models.tts.maskgct.g2p.g2p_generation import g2p, chn_eng_g2p
-
 from transformers import SeamlessM4TFeatureExtractor
 
 
 def g2p_(text, language):
+    # Import lazily so VC/SE pipelines don't require optional G2P deps
+    # (e.g. `pyopenjtalk`) at import time.
+    from models.tts.maskgct.g2p.g2p_generation import g2p, chn_eng_g2p
+
     if language in ["zh", "en"]:
         return chn_eng_g2p(text)
     else:
