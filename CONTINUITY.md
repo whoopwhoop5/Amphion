@@ -107,13 +107,16 @@
   - Rescored FLEURS fr_fr playlist runs with the updated playlist scorer (adds `call_score_v1` + latency): `summary_call_v1.json` written for:
     - FreeVC: `runs/vc_quest/playlists/fleurs_fr_fr/freevc_w800_h400/summary_call_v1.json` (mean call_score_v1≈0.022, latency_p95_ms≈465, dropout>0.01: 31/300).
     - Chatterbox: `runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_w800_h400_s8_mask_gain5_full/summary_call_v1.json` (mean call_score_v1=0 due to latency_p95_ms≈797 (>500ms), dropout>0.01: 0/300, rtf_p95>1: 87/300).
-- Now: VC quest: HiFi-VC is blocked (weights missing); use the French playlist to rank FreeVC vs Chatterbox (and future candidates) more robustly than the single user-pair.
+- VC quest (2026-01-12):
+  - Fixed scoring alignment for streaming configs when `drop_warmup_hops=true` and `window_ms` is not a multiple of `hop_ms` by correcting `delay_samples` (FreeVC + Chatterbox convert + playlist_convert). Commit: `f737667`.
+  - Added playlist scoring option `--wer_mode {transcript,audio_ref}` and wired `WER_MODE` env var into FreeVC/Chatterbox playlist runner scripts. Commit: `6961f77`.
+  - Chatterbox tuning findings (Vast): lowering timesteps or window size to reduce latency caused large WER regressions; `emit_align=end` also produced very high WER (≈0.95+ on smoke). Net: Chatterbox remains a quality/stability reference but is not call-suitable under `call_score_v1` latency constraints at the current realtime config.
+  - FreeVC full playlist run completed (Vast): `runs/vc_quest/playlists/fleurs_fr_fr/freevc_w800_h400_end_full/summary.json` has `call_score_v1` mean≈0.119 with latency_p95≈286ms (still dropouts >0.01 in ~30/300; WER≈0.94). This is a major call-UX improvement vs `freevc_w800_h400` (call_score≈0.022, latency_p95≈472ms).
+- Now: VC quest: continue FreeVC tuning for call UX; `freevc_w1000_h400_end_full` is running/scoring on Vast to see if longer windows improve WER without blowing latency.
 - Next:
-  - On the new Vast instance: `git pull` and rerun the top candidates (FreeVC/Chatterbox) as needed to regenerate listen artifacts + reports.
-  - Use the updated call-UX metrics (`call_score_v1`, latency) to re-run FreeVC/Chatterbox playlist smoke tests (`MAX_PAIRS`) and then full runs.
-  - Implement a minimal real-time runner for the best timbre-VC model (start with FreeVC unless Chatterbox listening is clearly better).
-  - Continue evaluating additional actionable candidates (AutoVC / ControlVC / PPG-VC / NeuralVC if checkpoints are accessible).
-  - If we still want HiFi-VC: find an alternative public checkpoint mirror (HF/S3) or obtain weights manually.
+  - Compare `freevc_w1000_h400_end_full` vs `freevc_w800_h400_end_full` and pick finalists for call-grade settings.
+  - Tune FreeVC VAD/hangover thresholds to reduce voiced dropouts without reintroducing silence leakage.
+  - Consider switching playlist scoring to `wer_mode=audio_ref` for streaming configs to avoid transcript WER being sensitive to startup trimming.
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
   - Whether to add optional VAD/gating to skip inference on silence (quality + compute).
