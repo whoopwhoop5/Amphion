@@ -125,6 +125,15 @@
     - ClassicVC/MMCXLI full 300 (audio_ref): `runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w1200_h400_end_full/summary.json` call_score_v1 mean≈0.234, latency_p95_ms mean≈224, WER mean≈0.748, S-SIM(target) mean≈0.903.
     - Metis VC/Omni: rejected for call UX (RTF_p95≈5, latency≈2s, very high WER, call_score_v1=0).
     - Added ClassicVC preset scripts: `scripts/vc_quest/presets/classicvc_fleurs_fr_quality.sh`, `scripts/vc_quest/presets/classicvc_fleurs_fr_call_latency.sh` and updated `docs/vc_quest.md` with audio_ref playlist results.
+- VC quest (2026-01-12):
+  - Strengthened “human ear” loop:
+    - `evaluation/vc_quest/score_playlist.py` now surfaces worst cases and can export listening bundles (`--export_worst_cases_dir`).
+    - Exported worst-case bundles on Vast and copied locally for listening:
+      - ClassicVC full: `runs/vc_quest/worst_cases/classicvc_w1200_h400_end_full_worst_cases_v1/`
+      - FreeVC full: `runs/vc_quest/worst_cases/freevc_w800_h400_end_full_worst_cases_v1/`
+  - ClassicVC tuning knobs exposed (pitch/energy/content_expand) and smoke-tested:
+    - `ESTIMATE_ENERGY=1` causes massive dropouts (31/50) → keep off.
+    - `ABSOLUTE_PITCH=0` reduces similarity → keep on.
 - Now: VC quest: ClassicVC/MMCXLI is currently the best call-latency candidate on FLEURS fr_fr (lower latency + better WER than FreeVC), but speaker similarity is lower than FreeVC/Chatterbox. Chatterbox remains the quality/stability reference but has ~0.8s latency at the realtime config (call_score_v1=0 under strict threshold).
 - Next:
   - Tune ClassicVC window/hop (and possibly gain/mask) to improve similarity/WER while keeping latency_p95_ms < 500ms; run smoke MAX_PAIRS=50 then full 300 for finalists.

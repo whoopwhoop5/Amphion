@@ -33,6 +33,21 @@ Outputs:
 - Run artifacts: `runs/vc_quest/playlists/fleurs_fr_fr/*/`
   - `wavs/*.wav`, `meta/*.json`, `summary.json`
 
+### Export “worst cases” for listening (recommended)
+To make the eval behave more like human ears, it helps to *listen to the failures*.
+You can export a small bundle of the worst cases (converted output + source + target + meta + report):
+
+```bash
+source .venv/bin/activate
+python -m evaluation.vc_quest.score_playlist \
+  --manifest data/vc_quest_playlists/fleurs_fr_fr_dev_v1/manifest.json \
+  --run_dir runs/vc_quest/playlists/fleurs_fr_fr/<RUN_NAME> \
+  --out_json runs/vc_quest/playlists/fleurs_fr_fr/<RUN_NAME>/summary_worst_v1.json \
+  --whisper_model base --whisper_language fr --wer_mode audio_ref \
+  --worst_cases_k 10 \
+  --export_worst_cases_dir worst_cases_v1
+```
+
 Latest results (Vast RTX 4090, WER_MODE=`audio_ref`, Whisper `base` language=`fr`, 300 pairs):
 - **ClassicVC/MMCXLI** (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w1200_h400_end_full/summary.json`)
   - call_score_v1 mean≈0.234, latency_p95_ms mean≈224, rtf_p95 mean≈0.060
