@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -107,6 +108,104 @@ def _char_error_rate(hyp: str, ref: str) -> float:
             dp[i, j] = min(dp[i - 1, j] + 1, dp[i, j - 1] + 1, dp[i - 1, j - 1] + cost)
 
     return float(dp[n, m]) / float(n)
+
+
+def _brief_case(case: dict[str, Any]) -> dict[str, Any]:
+    keys = [
+        "case_id",
+        "call_score_v1",
+        "wer",
+        "speaker_similarity_target",
+        "latency_p95_ms",
+        "rtf_p95",
+        "artifact_dropout_frac_voiced",
+        "artifact_silent_out_db_p95",
+        "glitch_boundary_jump_ratio_p95",
+        "paths",
+    ]
+    out: dict[str, Any] = {}
+    for k in keys:
+        if k in case:
+            out[k] = case.get(k)
+    return out
+
+
+def _topk_cases(
+    per_case: list[dict[str, Any]],
+    *,
+    key: str,
+    k: int,
+    reverse: bool,
+) -> list[dict[str, Any]]:
+    k = int(k)
+    if k <= 0:
+        return []
+
+    def sort_key(case: dict[str, Any]) -> tuple[int, float]:
+        v = float(case.get(key, float("nan")) or float("nan"))
+        is_bad = 0 if np.isfinite(v) else 1
+        if not np.isfinite(v):
+            v = 0.0
+        return (is_bad, v)
+
+    ordered = sorted(per_case, key=sort_key, reverse=bool(reverse))
+    out: list[dict[str, Any]] = []
+    for c in ordered:
+        v = float(c.get(key, float("nan")) or float("nan"))
+        if not np.isfinite(v):
+            continue
+        out.append(_brief_case(c))
+        if len(out) >= k:
+            break
+    return out
+
+
+def _safe_copy(src: str, dst: Path) -> bool:
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        return True
+    except Exception:
+        return False
+
+
+def _export_worst_cases(
+    *,
+    worst_cases: dict[str, list[dict[str, Any]]],
+    out_dir: Path,
+) -> dict[str, Any]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    exported: list[dict[str, Any]] = []
+    missing: list[dict[str, Any]] = []
+
+    for group, cases in worst_cases.items():
+        group_dir = out_dir / group
+        group_dir.mkdir(parents=True, exist_ok=True)
+        for i, c in enumerate(cases):
+            cid = str(c.get("case_id") or f"case_{i:02d}")
+            case_dir = group_dir / f"{i:02d}_{cid}"
+            case_dir.mkdir(parents=True, exist_ok=True)
+            (case_dir / "report.json").write_text(json.dumps(c, indent=2))
+
+            paths = c.get("paths") or {}
+            src_wav = str(paths.get("src_wav") or "")
+            tgt_wav = str(paths.get("tgt_wav") or "")
+            deg_wav = str(paths.get("deg_wav") or "")
+            meta_json = str(paths.get("meta_json") or "")
+
+            ok = True
+            ok = ok and (not src_wav or _safe_copy(src_wav, case_dir / "src.wav"))
+            ok = ok and (not tgt_wav or _safe_copy(tgt_wav, case_dir / "tgt.wav"))
+            ok = ok and (not deg_wav or _safe_copy(deg_wav, case_dir / "deg.wav"))
+            ok = ok and (not meta_json or _safe_copy(meta_json, case_dir / "meta.json"))
+
+            entry = {"group": group, "case_id": cid, "dir": str(case_dir)}
+            if ok:
+                exported.append(entry)
+            else:
+                missing.append(entry)
+
+    return {"out_dir": str(out_dir), "exported": exported, "missing": missing}
 
 
 @dataclass
@@ -284,6 +383,21 @@ def main(argv: Optional[list[str]] = None) -> int:
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Write per-case JSON reports under run_dir/reports/.",
+    )
+    parser.add_argument(
+        "--worst_cases_k",
+        type=int,
+        default=10,
+        help="Number of worst cases to surface per category (0 disables).",
+    )
+    parser.add_argument(
+        "--export_worst_cases_dir",
+        type=str,
+        default="",
+        help=(
+            "Optional directory to export worst-case bundles (deg/src/tgt/meta/report) "
+            "for quick listening. If relative, it is created under --run_dir."
+        ),
     )
     parser.add_argument(
         "--pitch_metrics",
@@ -541,6 +655,39 @@ def main(argv: Optional[list[str]] = None) -> int:
             ),
         },
     }
+
+    # Surface worst cases to speed up “human ear” spot-checking.
+    worst_k = int(args.worst_cases_k)
+    if worst_k > 0:
+        worst_cases: dict[str, list[dict[str, Any]]] = {
+            "lowest_call_score_v1": _topk_cases(
+                per_case, key="call_score_v1", k=worst_k, reverse=False
+            ),
+            "highest_wer": _topk_cases(per_case, key="wer", k=worst_k, reverse=True),
+            "lowest_speaker_similarity_target": _topk_cases(
+                per_case, key="speaker_similarity_target", k=worst_k, reverse=False
+            ),
+            "highest_dropout_frac_voiced": _topk_cases(
+                per_case, key="artifact_dropout_frac_voiced", k=worst_k, reverse=True
+            ),
+            "highest_silent_out_db_p95": _topk_cases(
+                per_case, key="artifact_silent_out_db_p95", k=worst_k, reverse=True
+            ),
+            "highest_glitch_boundary_jump_ratio_p95": _topk_cases(
+                per_case, key="glitch_boundary_jump_ratio_p95", k=worst_k, reverse=True
+            ),
+        }
+        summary["worst_cases"] = worst_cases
+
+        export_dir_s = str(args.export_worst_cases_dir).strip()
+        if export_dir_s:
+            export_dir = Path(export_dir_s)
+            if not export_dir.is_absolute():
+                export_dir = run_dir / export_dir
+            summary["worst_cases_export"] = _export_worst_cases(
+                worst_cases=worst_cases,
+                out_dir=export_dir,
+            )
 
     out_p = Path(args.out_json)
     out_p.parent.mkdir(parents=True, exist_ok=True)
