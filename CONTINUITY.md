@@ -120,8 +120,10 @@
   - FreeVC VAD/fade sweep (Vast, MAX_PAIRS=50): hangover/aggr/db/fade tweaks did not reduce voiced-dropout cases (dropout>0.01 stayed 3/50 across runs), suggesting dropouts are largely model-inherent at this config.
   - Added FreeVC gain/mask controls to streaming conversion + scripts (commit `63467d4`) and smoke-tested: gain+mask improves glitch metrics and modestly improves call_score on the smoke subset, but does not eliminate voiced-dropout cases.
   - Added “known-good” preset runner scripts for FLEURS fr_fr: `scripts/vc_quest/presets/*` (FreeVC: quality vs call-latency; Chatterbox: quality reference).
+  - Added new competitor integrations (not yet benchmarked on Vast): ClassicVC/MMCXLI (ONNX) and Metis (metis_vc + metis_omni) offline + streaming-sim converters + playlist runners + Vast setup/run scripts. Commits: `0c84cb4`, `4a188e3`.
 - Now: VC quest: FreeVC remains the only call-latency candidate (≈270–320ms latency_p95 on Vast with emit_align=end), but intelligibility (Whisper WER) + voiced-dropout cases remain the main blockers.
 - Next:
+  - Run Vast smoke evals for ClassicVC/MMCXLI + Metis on user_pair + FLEURS fr_fr (MAX_PAIRS=50), then full 300 if promising.
   - Decide whether to adopt gain/mask for FreeVC and re-run a full 300-pair evaluation for the best settings.
   - Add “worst cases” surfacing (case IDs/paths) for dropouts/glitches to speed subjective spot-checking.
   - Revisit Chatterbox call-latency only if we can reduce algorithmic delay or inference time without WER collapse; otherwise treat as hard-limited for call UX.
