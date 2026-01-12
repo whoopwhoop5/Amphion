@@ -134,8 +134,12 @@
   - ClassicVC tuning knobs exposed (pitch/energy/content_expand) and smoke-tested:
     - `ESTIMATE_ENERGY=1` causes massive dropouts (31/50) → keep off.
     - `ABSOLUTE_PITCH=0` reduces similarity → keep on.
-- Now: VC quest: ClassicVC/MMCXLI is currently the best call-latency candidate on FLEURS fr_fr (lower latency + better WER than FreeVC), but speaker similarity is lower than FreeVC/Chatterbox. Chatterbox remains the quality/stability reference but has ~0.8s latency at the realtime config (call_score_v1=0 under strict threshold).
+- VC quest (2026-01-12):
+  - Strengthened auto-ears: added ASR confidence metrics + burstiness artifact signals (dropout/leak run-length), plus new composite scores `call_score_v2` (relaxed latency curve) and `ear_score_v2`; `select_best.py` supports `--score_key`. Commit: `24754e0`.
+  - Vast rescoring queued to write `summary_ear_v2.json` for key full runs (ClassicVC/FreeVC/Chatterbox).
+- Now: VC quest: ClassicVC/MMCXLI is currently the best call-latency candidate on FLEURS fr_fr (lower latency + better WER than FreeVC), but speaker similarity is lower than FreeVC/Chatterbox. Chatterbox remains the quality/stability reference but has ~0.8s latency at the realtime config (`call_score_v1=0` under strict threshold). Vast is rescoring full runs with the new auto-ear metrics (`summary_ear_v2.json`).
 - Next:
+  - Once `summary_ear_v2.json` is ready, update the model rankings/presets based on `call_score_v2` + `ear_score_v2`.
   - Tune ClassicVC window/hop (and possibly gain/mask) to improve similarity/WER while keeping latency_p95_ms < 500ms; run smoke MAX_PAIRS=50 then full 300 for finalists.
   - Decide whether to adopt FreeVC gain/mask and rerun a full 300-pair evaluation for the best settings.
   - Add “worst cases” surfacing (case IDs/paths) for dropouts/glitches to speed subjective spot-checking.
