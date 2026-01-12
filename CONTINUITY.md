@@ -112,11 +112,18 @@
   - Added playlist scoring option `--wer_mode {transcript,audio_ref}` and wired `WER_MODE` env var into FreeVC/Chatterbox playlist runner scripts. Commit: `6961f77`.
   - Chatterbox tuning findings (Vast): lowering timesteps or window size to reduce latency caused large WER regressions; `emit_align=end` also produced very high WER (≈0.95+ on smoke). Net: Chatterbox remains a quality/stability reference but is not call-suitable under `call_score_v1` latency constraints at the current realtime config.
   - FreeVC full playlist run completed (Vast): `runs/vc_quest/playlists/fleurs_fr_fr/freevc_w800_h400_end_full/summary.json` has `call_score_v1` mean≈0.119 with latency_p95≈286ms (still dropouts >0.01 in ~30/300; WER≈0.94). This is a major call-UX improvement vs `freevc_w800_h400` (call_score≈0.022, latency_p95≈472ms).
-- Now: VC quest: continue FreeVC tuning for call UX; `freevc_w1000_h400_end_full` is running/scoring on Vast to see if longer windows improve WER without blowing latency.
+- VC quest (2026-01-12):
+  - FreeVC full playlist run completed (Vast): `runs/vc_quest/playlists/fleurs_fr_fr/freevc_w1000_h400_end_full/summary.json` => call_score_v1 mean≈0.119, latency_p95_ms p95≈318ms, WER mean≈0.94, dropout>0.01: 30/300. Similar call_score to `w800/h400 end`, but worse latency; `w800/h400 end` remains the best tradeoff so far.
+  - Audio-ref rescoring completed for key full runs:
+    - FreeVC: `freevc_w800_h400_end_full/summary_audio_ref.json` call_score_v1 mean≈0.122, WER mean≈0.934.
+    - Chatterbox: `chatterbox_w800_h400_s8_mask_gain5_full/summary_audio_ref.json` WER mean≈0.617, but call_score_v1 still 0 due to latency_p95_ms≈797ms.
+  - FreeVC VAD/fade sweep (Vast, MAX_PAIRS=50): hangover/aggr/db/fade tweaks did not reduce voiced-dropout cases (dropout>0.01 stayed 3/50 across runs), suggesting dropouts are largely model-inherent at this config.
+  - Added FreeVC gain/mask controls to streaming conversion + scripts (commit `63467d4`) and smoke-tested: gain+mask improves glitch metrics and modestly improves call_score on the smoke subset, but does not eliminate voiced-dropout cases.
+- Now: VC quest: FreeVC remains the only call-latency candidate (≈270–320ms latency_p95 on Vast with emit_align=end), but intelligibility (Whisper WER) + voiced-dropout cases remain the main blockers.
 - Next:
-  - Compare `freevc_w1000_h400_end_full` vs `freevc_w800_h400_end_full` and pick finalists for call-grade settings.
-  - Tune FreeVC VAD/hangover thresholds to reduce voiced dropouts without reintroducing silence leakage.
-  - Consider switching playlist scoring to `wer_mode=audio_ref` for streaming configs to avoid transcript WER being sensitive to startup trimming.
+  - Decide whether to adopt gain/mask for FreeVC and re-run a full 300-pair evaluation for the best settings.
+  - Add “worst cases” surfacing (case IDs/paths) for dropouts/glitches to speed subjective spot-checking.
+  - Revisit Chatterbox call-latency only if we can reduce algorithmic delay or inference time without WER collapse; otherwise treat as hard-limited for call UX.
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
   - Whether to add optional VAD/gating to skip inference on silence (quality + compute).
