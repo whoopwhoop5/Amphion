@@ -106,12 +106,15 @@ if [[ "${PITCH_METRICS:-0}" == "1" ]]; then
   SCORE_ARGS+=(--pitch_metrics)
 fi
 
+WER_MODE="${WER_MODE:-transcript}"
+
 python -m evaluation.vc_quest.score_playlist \
   --manifest "${MANIFEST}" \
   --run_dir "${RUN_DIR}" \
   --out_json "${RUN_DIR}/summary.json" \
   --whisper_model base \
   --whisper_language fr \
+  --wer_mode "${WER_MODE}" \
   "${SCORE_ARGS[@]}"
 
 echo "[chatterbox_run_fleurs_fr_playlist] Wrote ${RUN_DIR}/summary.json"

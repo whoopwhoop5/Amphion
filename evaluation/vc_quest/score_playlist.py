@@ -264,6 +264,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--whisper_model", type=str, default="base")
     parser.add_argument("--whisper_language", type=str, default="fr")
     parser.add_argument(
+        "--wer_mode",
+        type=str,
+        default="transcript",
+        choices=["transcript", "audio_ref"],
+        help=(
+            "How to compute WER/CER: 'transcript' uses the dataset transcript; "
+            "'audio_ref' transcribes the aligned source audio (more robust to streaming delay)."
+        ),
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default="",
@@ -300,11 +310,17 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     whisper_model = load_whisper(str(args.whisper_model))
     whisper_lang = str(args.whisper_language).strip() or None
+    wer_mode = str(args.wer_mode)
 
     device = str(args.device).strip() or (
         "cuda:0" if torch.cuda.is_available() else "cpu"
     )
     spk = _WavLMSpeakerEmbedder(device=device)
+
+    asr_cache_dir = run_dir / "asr_cache"
+    if wer_mode == "audio_ref":
+        asr_cache_dir.mkdir(parents=True, exist_ok=True)
+    src_asr_cache: dict[tuple[str, int, int, int], str] = {}
 
     per_case: list[dict[str, Any]] = []
     missing: list[str] = []
@@ -344,14 +360,40 @@ def main(argv: Optional[list[str]] = None) -> int:
         if bool(args.pitch_metrics):
             pm = pitch_metrics_aligned(src_trim, deg, sample_rate=deg_sr)
 
-        # Content: transcript-based WER/CER (single ASR pass on deg).
-        ref_text = _normalize_text_for_wer(str(s.transcript))
+        # Content: WER/CER (single ASR pass on deg).
         deg_asr = (
             whisper_model.transcribe(str(deg_wav), verbose=False, language=whisper_lang)
             if whisper_lang
             else whisper_model.transcribe(str(deg_wav), verbose=False)
         )
         hyp_text = _normalize_text_for_wer(str(deg_asr.get("text") or ""))
+
+        if wer_mode == "audio_ref":
+            cache_key = (str(pair.source_id), int(delay_samples), int(n), int(deg_sr))
+            ref_text = src_asr_cache.get(cache_key, "")
+            if not ref_text:
+                wav_key = f"{pair.source_id}_d{delay_samples}_n{n}_sr{deg_sr}"
+                ref_wav_path = asr_cache_dir / f"{wav_key}.wav"
+                ref_txt_path = asr_cache_dir / f"{wav_key}.txt"
+                if ref_txt_path.exists():
+                    ref_text = ref_txt_path.read_text().strip()
+                else:
+                    from evaluation.vevo_live.common import write_wav
+
+                    write_wav(str(ref_wav_path), src_trim, deg_sr)
+                    ref_asr = (
+                        whisper_model.transcribe(
+                            str(ref_wav_path), verbose=False, language=whisper_lang
+                        )
+                        if whisper_lang
+                        else whisper_model.transcribe(str(ref_wav_path), verbose=False)
+                    )
+                    ref_text = _normalize_text_for_wer(str(ref_asr.get("text") or ""))
+                    ref_txt_path.write_text(ref_text)
+                src_asr_cache[cache_key] = ref_text
+        else:
+            ref_text = _normalize_text_for_wer(str(s.transcript))
+
         wer = _word_error_rate(hyp_text.split(), ref_text.split())
         cer = _char_error_rate(hyp_text, ref_text)
 
@@ -448,6 +490,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "run_dir": str(run_dir.resolve()),
             "whisper_model": str(args.whisper_model),
             "whisper_language": str(args.whisper_language),
+            "wer_mode": wer_mode,
             "num_pairs_manifest": int(len(manifest.pairs)),
             "num_scored": int(len(per_case)),
             "num_missing": int(len(missing)),
