@@ -19,6 +19,7 @@ mkdir -p "${RUN_DIR}"
 CHATTERBOX_DIR="${HOME}/deps/chatterbox"
 SEED="${SEED:-0}"
 CFM_TIMESTEPS="${CFM_TIMESTEPS:-8}"
+WATERMARK="${WATERMARK:-1}"
 
 STREAM_WINDOW_MS="${STREAM_WINDOW_MS:-800}"
 STREAM_HOP_MS="${STREAM_HOP_MS:-400}"
@@ -57,6 +58,13 @@ fi
 source "${CONDA_SH}"
 conda activate "${ENV_NAME}"
 
+WATERMARK_ARGS=()
+if [[ "${WATERMARK}" == "0" ]]; then
+  WATERMARK_ARGS+=(--no-watermark)
+else
+  WATERMARK_ARGS+=(--watermark)
+fi
+
 python -m evaluation.vc_quest.chatterbox_playlist_convert \
   --manifest "${MANIFEST}" \
   --out_dir "${RUN_DIR}" \
@@ -64,6 +72,7 @@ python -m evaluation.vc_quest.chatterbox_playlist_convert \
   --device cuda:0 \
   --seed "${SEED}" \
   --cfm_timesteps "${CFM_TIMESTEPS}" \
+  "${WATERMARK_ARGS[@]}" \
   --stream \
   --window_ms "${STREAM_WINDOW_MS}" \
   --hop_ms "${STREAM_HOP_MS}" \
