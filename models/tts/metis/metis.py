@@ -14,7 +14,11 @@ import librosa
 from models.tts.metis.audio_tokenizer import AudioTokenizer
 from models.tts.maskgct.maskgct_utils import build_t2s_model, build_s2a_model, g2p_
 from models.tts.metis.metis_model import MetisStage1
-from peft import LoraModel, LoraConfig
+try:
+    from peft import LoraModel, LoraConfig  # type: ignore
+except Exception:
+    LoraModel = None  # type: ignore[assignment]
+    LoraConfig = None  # type: ignore[assignment]
 
 from huggingface_hub import hf_hub_download, snapshot_download
 
@@ -35,6 +39,11 @@ def build_metis_stage1(cfg, device, ft_type=None):
         use_zero_gate_adapter=use_zero_gate_adapter,
     )
     if hasattr(cfg, "use_lora") and cfg.use_lora:
+        if LoraModel is None or LoraConfig is None:
+            raise ImportError(
+                "Metis is configured with use_lora=true, but peft could not be imported. "
+                "Install a peft version compatible with your transformers version."
+            )
         lora_config = LoraConfig(
             task_type="SEQ_2_SEQ_LM",
             r=cfg.lora_r,
@@ -73,6 +82,10 @@ def merge_lora_weights(cfg, base_model, lora_weights):
     Returns:
         MetisStage1: Model with merged weights
     """
+    if LoraModel is None or LoraConfig is None:
+        raise ImportError(
+            "peft is required to merge LoRA weights, but it could not be imported."
+        )
     if isinstance(base_model, LoraModel):
         base_model = base_model.model  # Get the underlying model if it's wrapped
 
@@ -131,6 +144,10 @@ def extract_lora_weights(model):
     Returns:
         dict: LoRA weights state dict
     """
+    if LoraModel is None:
+        raise ImportError(
+            "peft is required to extract LoRA weights, but it could not be imported."
+        )
     if not isinstance(model, LoraModel):
         raise ValueError("Model must be a LoraModel instance")
 
