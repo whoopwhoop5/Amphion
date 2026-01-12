@@ -49,6 +49,7 @@ python -m pip install -U \
   tqdm \
   webrtcvad \
   json5 \
+  ruamel.yaml \
   safetensors \
   "transformers==4.41.2" \
   huggingface_hub \
