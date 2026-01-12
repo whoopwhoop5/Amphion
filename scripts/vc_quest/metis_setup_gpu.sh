@@ -54,7 +54,7 @@ python -m pip install -U \
   safetensors \
   "transformers==4.41.2" \
   huggingface_hub \
-  peft \
+  "peft==0.10.0" \
   langid \
   einops \
   accelerate \
@@ -70,7 +70,9 @@ snapshot_download(
     repo_type="model",
     local_dir="./models/tts/metis/ckpt",
     allow_patterns=[
-        "metis_vc/metis_vc.safetensors",
+        "metis_base/model.safetensors",
+        "metis_vc/metis_vc_lora_16.safetensors",
+        "metis_vc/metis_vc_lora_16_adapter.safetensors",
         "metis_omni/metis_omni.safetensors",
     ],
 )

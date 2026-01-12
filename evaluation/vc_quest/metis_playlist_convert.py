@@ -177,8 +177,10 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if str(args.variant) == "metis_vc":
         cfg_path = repo_root / "models" / "tts" / "metis" / "config" / "ft.json"
-        ckpt_rel = "metis_vc/metis_vc.safetensors"
-        allow_patterns = [ckpt_rel]
+        base_ckpt_rel = "metis_base/model.safetensors"
+        lora_ckpt_rel = "metis_vc/metis_vc_lora_16.safetensors"
+        adapter_ckpt_rel = "metis_vc/metis_vc_lora_16_adapter.safetensors"
+        allow_patterns = [base_ckpt_rel, lora_ckpt_rel, adapter_ckpt_rel]
         model_type_init = "vc"
     elif str(args.variant) == "metis_omni":
         cfg_path = repo_root / "models" / "tts" / "metis" / "config" / "omni.json"
@@ -195,14 +197,30 @@ def main(argv: Optional[list[str]] = None) -> int:
         local_dir=str(repo_root / "models" / "tts" / "metis" / "ckpt"),
         allow_patterns=allow_patterns,
     )
-    ckpt_path = str(Path(ckpt_dir) / ckpt_rel)
-
-    metis = Metis(
-        ckpt_path=ckpt_path,
-        cfg=metis_cfg,
-        device=str(device),
-        model_type=str(model_type_init),
-    )
+    if str(args.variant) == "metis_vc":
+        base_ckpt_path = str(Path(ckpt_dir) / base_ckpt_rel)
+        lora_ckpt_path = str(Path(ckpt_dir) / lora_ckpt_rel)
+        adapter_ckpt_path = str(Path(ckpt_dir) / adapter_ckpt_rel)
+        metis_cfg.model.t2s_model.use_lora = True
+        metis_cfg.model.t2s_model.lora_r = 16
+        metis_cfg.model.t2s_model.lora_alpha = 16
+        metis = Metis(
+            ckpt_path=None,
+            base_ckpt_path=base_ckpt_path,
+            lora_ckpt_path=lora_ckpt_path,
+            adapter_ckpt_path=adapter_ckpt_path,
+            cfg=metis_cfg,
+            device=str(device),
+            model_type=str(model_type_init),
+        )
+    else:
+        ckpt_path = str(Path(ckpt_dir) / ckpt_rel)
+        metis = Metis(
+            ckpt_path=ckpt_path,
+            cfg=metis_cfg,
+            device=str(device),
+            model_type=str(model_type_init),
+        )
 
     in_sr = 16000
     out_sr = 24000
@@ -486,4 +504,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
