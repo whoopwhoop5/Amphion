@@ -24,6 +24,8 @@ class PairMetrics:
     max_dropout_frac_voiced: float
     rtf_p95: float
     mean_call_score_v1: float
+    mean_call_score_v2: float
+    mean_ear_score_v2: float
     max_latency_p95_ms: float
     max_glitch_boundary_jump_ratio_p95: float
 
@@ -58,6 +60,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--run_dir", type=str, required=True)
     parser.add_argument("--out_json", type=str, default="")
+    parser.add_argument(
+        "--score_key",
+        type=str,
+        default="call_score_v1",
+        choices=["call_score_v1", "call_score_v2", "ear_score_v2"],
+        help="Primary ranking metric (higher is better).",
+    )
     parser.add_argument("--require_rtf_p95", type=float, default=1.0)
     parser.add_argument(
         "--require_min_speaker_similarity",
@@ -135,6 +144,14 @@ def main(argv: list[str] | None = None) -> int:
         score_b = _finite(rep_b.get("call_score_v1", float("nan")), 0.0)
         mean_call_score_v1 = 0.5 * (score_a + score_b)
 
+        score2_a = _finite(rep_a.get("call_score_v2", float("nan")), 0.0)
+        score2_b = _finite(rep_b.get("call_score_v2", float("nan")), 0.0)
+        mean_call_score_v2 = 0.5 * (score2_a + score2_b)
+
+        ear_a = _finite(rep_a.get("ear_score_v2", float("nan")), 0.0)
+        ear_b = _finite(rep_b.get("ear_score_v2", float("nan")), 0.0)
+        mean_ear_score_v2 = 0.5 * (ear_a + ear_b)
+
         lat_a = _finite(rep_a.get("latency_p95_ms", float("nan")), 1e9)
         lat_b = _finite(rep_b.get("latency_p95_ms", float("nan")), 1e9)
         max_latency_p95_ms = max(lat_a, lat_b)
@@ -162,6 +179,8 @@ def main(argv: list[str] | None = None) -> int:
                 max_dropout_frac_voiced=max_drop,
                 rtf_p95=rtf_p95,
                 mean_call_score_v1=float(mean_call_score_v1),
+                mean_call_score_v2=float(mean_call_score_v2),
+                mean_ear_score_v2=float(mean_ear_score_v2),
                 max_latency_p95_ms=float(max_latency_p95_ms),
                 max_glitch_boundary_jump_ratio_p95=float(
                     max_glitch_boundary_jump_ratio_p95
@@ -222,10 +241,19 @@ def main(argv: list[str] | None = None) -> int:
             eligible = subset
             break
 
-    # Sort for live-call UX: higher call_score is better, then lower latency, then lower WER.
+    score_key = str(args.score_key)
+
+    def _primary_score(r: PairMetrics) -> float:
+        if score_key == "call_score_v2":
+            return float(r.mean_call_score_v2)
+        if score_key == "ear_score_v2":
+            return float(r.mean_ear_score_v2)
+        return float(r.mean_call_score_v1)
+
+    # Sort for live-call UX: higher score is better, then lower latency, then lower WER.
     eligible.sort(
         key=lambda r: (
-            -r.mean_call_score_v1,
+            -_primary_score(r),
             r.max_latency_p95_ms,
             r.mean_wer,
             -r.min_speaker_similarity,
@@ -237,13 +265,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     best = eligible[0]
 
-    print(
-        "window_ms hop_ms call_score lat_p95_ms mean_wer min_sim leak_p95_db drop_voiced glitch_p95 rtf_p95"
-    )
+    print("window_ms hop_ms score_key score call_v1 call_v2 ear_v2 lat_p95_ms mean_wer min_sim leak_p95_db drop_voiced glitch_p95 rtf_p95")
     print(f"[select_best] tier={tier_name} (eligible={len(eligible)}/{len(base)})")
     for r in eligible[:20]:
         print(
-            f"{r.window_ms:8d} {r.hop_ms:6d} {r.mean_call_score_v1:9.3f} {r.max_latency_p95_ms:10.1f} "
+            f"{r.window_ms:8d} {r.hop_ms:6d} {score_key:8s} {_primary_score(r):5.3f} {r.mean_call_score_v1:7.3f} {r.mean_call_score_v2:7.3f} {r.mean_ear_score_v2:7.3f} {r.max_latency_p95_ms:10.1f} "
             f"{r.mean_wer:7.3f} {r.min_speaker_similarity:7.3f} {r.max_silent_out_db_p95:10.2f} "
             f"{r.max_dropout_frac_voiced:10.3f} {r.max_glitch_boundary_jump_ratio_p95:9.3f} {r.rtf_p95:7.3f}"
         )
@@ -251,6 +277,7 @@ def main(argv: list[str] | None = None) -> int:
     out = {
         "selection": {
             "tier": str(tier_name),
+            "score_key": str(score_key),
             "require_rtf_p95": float(args.require_rtf_p95),
             "require_min_speaker_similarity": float(min_sim_req),
             "require_max_silent_out_db_p95": float(max_leak_req),
@@ -260,6 +287,9 @@ def main(argv: list[str] | None = None) -> int:
             "window_ms": int(best.window_ms),
             "hop_ms": int(best.hop_ms),
             "mean_call_score_v1": float(best.mean_call_score_v1),
+            "mean_call_score_v2": float(best.mean_call_score_v2),
+            "mean_ear_score_v2": float(best.mean_ear_score_v2),
+            "mean_score": float(_primary_score(best)),
             "max_latency_p95_ms": float(best.max_latency_p95_ms),
             "max_glitch_boundary_jump_ratio_p95": float(
                 best.max_glitch_boundary_jump_ratio_p95

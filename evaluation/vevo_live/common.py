@@ -380,6 +380,10 @@ def artifact_metrics_aligned(
             "silent_out_db_mean": float("nan"),
             "silent_out_db_p95": float("nan"),
             "dropout_frac_voiced": float("nan"),
+            "dropout_run_ms_p95": float("nan"),
+            "dropout_run_ms_max": float("nan"),
+            "silence_leak_run_ms_p95": float("nan"),
+            "silence_leak_run_ms_max": float("nan"),
             "delta_db_std_voiced": float("nan"),
             "delta_db_step_p95": float("nan"),
             "env_corr_voiced": float("nan"),
@@ -400,6 +404,10 @@ def artifact_metrics_aligned(
             "silent_out_db_mean": float("nan"),
             "silent_out_db_p95": float("nan"),
             "dropout_frac_voiced": float("nan"),
+            "dropout_run_ms_p95": float("nan"),
+            "dropout_run_ms_max": float("nan"),
+            "silence_leak_run_ms_p95": float("nan"),
+            "silence_leak_run_ms_max": float("nan"),
             "delta_db_std_voiced": float("nan"),
             "delta_db_step_p95": float("nan"),
             "env_corr_voiced": float("nan"),
@@ -439,6 +447,30 @@ def artifact_metrics_aligned(
     # Dropouts: output far quieter than input on voiced frames.
     dropout = (deg_db < (src_db - 25.0)) & voiced
     dropout_frac_voiced = float(np.mean(dropout)) if np.any(voiced) else float("nan")
+
+    frame_dur_ms = 1000.0 * float(frame) / float(sample_rate)
+
+    def _run_ms_stats(mask: np.ndarray) -> tuple[float, float]:
+        mask = np.asarray(mask, dtype=bool).reshape(-1)
+        if mask.size == 0 or not np.any(mask):
+            return 0.0, 0.0
+        m = mask.astype(np.int8)
+        diff = np.diff(np.pad(m, (1, 1), constant_values=0))
+        starts = np.where(diff == 1)[0]
+        ends = np.where(diff == -1)[0]
+        if starts.size == 0 or ends.size == 0:
+            return 0.0, 0.0
+        lengths = (ends - starts).astype(np.float32)
+        if lengths.size == 0:
+            return 0.0, 0.0
+        run_ms = lengths * float(frame_dur_ms)
+        return float(np.percentile(run_ms, 95)), float(np.max(run_ms))
+
+    dropout_run_ms_p95, dropout_run_ms_max = _run_ms_stats(dropout)
+
+    leak_db = float(max(-40.0, float(silence_in_db) + 15.0))
+    silence_leak = silent & (deg_db > leak_db)
+    silence_leak_run_ms_p95, silence_leak_run_ms_max = _run_ms_stats(silence_leak)
 
     delta_db = deg_db - src_db
     delta_db_std_voiced = (
@@ -485,6 +517,10 @@ def artifact_metrics_aligned(
         "silent_out_db_mean": float(silent_out_db_mean),
         "silent_out_db_p95": float(silent_out_db_p95),
         "dropout_frac_voiced": float(dropout_frac_voiced),
+        "dropout_run_ms_p95": float(dropout_run_ms_p95),
+        "dropout_run_ms_max": float(dropout_run_ms_max),
+        "silence_leak_run_ms_p95": float(silence_leak_run_ms_p95),
+        "silence_leak_run_ms_max": float(silence_leak_run_ms_max),
         "delta_db_std_voiced": float(delta_db_std_voiced),
         "delta_db_step_p95": float(delta_db_step_p95),
         "env_corr_voiced": float(env_corr_voiced),

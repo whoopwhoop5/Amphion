@@ -15,14 +15,13 @@ import soundfile as sf
 
 from evaluation.vevo_live.common import (
     artifact_metrics_aligned,
-    compute_wer_whisper,
     glitch_metrics,
     load_whisper,
     pitch_metrics_aligned,
     write_wav,
 )
 
-REPORT_VERSION = 1
+REPORT_VERSION = 2
 
 
 def _report_is_current(path: Path) -> bool:
@@ -155,6 +154,45 @@ def _score_higher_is_better(x: float, *, good: float, bad: float) -> float:
     return float((x - bad) / (good - bad))
 
 
+def _whisper_confidence_metrics(asr: dict[str, Any]) -> dict[str, float]:
+    segs = asr.get("segments") or []
+    if not isinstance(segs, list):
+        segs = []
+
+    def _collect(key: str) -> np.ndarray:
+        vals: list[float] = []
+        for seg in segs:
+            if not isinstance(seg, dict):
+                continue
+            try:
+                v = float(seg.get(key))
+            except Exception:
+                continue
+            if np.isfinite(v):
+                vals.append(v)
+        return np.asarray(vals, dtype=np.float64)
+
+    avg_logprob = _collect("avg_logprob")
+    compression_ratio = _collect("compression_ratio")
+    no_speech_prob = _collect("no_speech_prob")
+
+    def _mean_or_nan(x: np.ndarray) -> float:
+        return float(np.mean(x)) if x.size else float("nan")
+
+    def _pct_or_nan(x: np.ndarray, q: float) -> float:
+        return float(np.percentile(x, q)) if x.size else float("nan")
+
+    return {
+        "asr_num_segments": float(len(segs)),
+        "asr_avg_logprob_mean": _mean_or_nan(avg_logprob),
+        "asr_avg_logprob_p10": _pct_or_nan(avg_logprob, 10),
+        "asr_compression_ratio_mean": _mean_or_nan(compression_ratio),
+        "asr_compression_ratio_p90": _pct_or_nan(compression_ratio, 90),
+        "asr_no_speech_prob_mean": _mean_or_nan(no_speech_prob),
+        "asr_no_speech_prob_p90": _pct_or_nan(no_speech_prob, 90),
+    }
+
+
 def _emit_start_ms(window_ms: int, hop_ms: int, emit_align: str) -> float:
     window_ms = int(window_ms)
     hop_ms = int(hop_ms)
@@ -215,6 +253,107 @@ def _call_score_v1(
     stability = s_silence * s_dropout * s_clip
 
     return float(_clamp01(quality * stability * s_glitch * s_rtf * s_latency))
+
+
+def _asr_confidence_score_v1(
+    *,
+    asr_avg_logprob_p10: float,
+    asr_compression_ratio_p90: float,
+) -> float:
+    s_logprob = _score_higher_is_better(asr_avg_logprob_p10, good=-0.3, bad=-1.5)
+    s_comp = _score_lower_is_better(asr_compression_ratio_p90, good=1.8, bad=2.4)
+    return float(_clamp01(s_logprob * s_comp))
+
+
+def _call_score_v2(
+    *,
+    wer: float,
+    speaker_similarity_target: float,
+    speaker_similarity_source: float,
+    asr_avg_logprob_p10: float,
+    asr_compression_ratio_p90: float,
+    silent_out_db_p95: float,
+    silence_leak_run_ms_p95: float,
+    dropout_frac_voiced: float,
+    dropout_run_ms_p95: float,
+    clip_frac: float,
+    glitch_boundary_jump_ratio_p95: float,
+    rtf_p95: float,
+    latency_p95_ms: float,
+) -> float:
+    s_sim_tgt = _score_higher_is_better(speaker_similarity_target, good=0.97, bad=0.90)
+    s_sim_margin = _score_higher_is_better(
+        float(speaker_similarity_target - speaker_similarity_source),
+        good=0.05,
+        bad=-0.05,
+    )
+    s_wer = _score_lower_is_better(wer, good=0.55, bad=1.05)
+    s_asr = _asr_confidence_score_v1(
+        asr_avg_logprob_p10=asr_avg_logprob_p10,
+        asr_compression_ratio_p90=asr_compression_ratio_p90,
+    )
+
+    s_silence = _score_lower_is_better(silent_out_db_p95, good=-40.0, bad=-25.0)
+    s_leak_run = _score_lower_is_better(silence_leak_run_ms_p95, good=0.0, bad=250.0)
+    s_dropout = _score_lower_is_better(dropout_frac_voiced, good=0.0, bad=0.01)
+    s_dropout_run = _score_lower_is_better(dropout_run_ms_p95, good=0.0, bad=80.0)
+    s_clip = _score_lower_is_better(clip_frac, good=0.0, bad=0.001)
+
+    s_glitch = (
+        _score_lower_is_better(glitch_boundary_jump_ratio_p95, good=2.0, bad=8.0)
+        if np.isfinite(glitch_boundary_jump_ratio_p95)
+        else 1.0
+    )
+    s_rtf = _score_lower_is_better(rtf_p95, good=0.85, bad=1.05)
+    s_latency = _score_lower_is_better(latency_p95_ms, good=150.0, bad=1000.0)
+
+    quality = 0.30 * s_wer + 0.25 * s_sim_tgt + 0.15 * s_sim_margin + 0.30 * s_asr
+    stability = s_silence * s_leak_run * s_dropout * s_dropout_run * s_clip
+
+    return float(_clamp01(quality * stability * s_glitch * s_rtf * s_latency))
+
+
+def _ear_score_v2(
+    *,
+    wer: float,
+    speaker_similarity_target: float,
+    speaker_similarity_source: float,
+    asr_avg_logprob_p10: float,
+    asr_compression_ratio_p90: float,
+    silent_out_db_p95: float,
+    silence_leak_run_ms_p95: float,
+    dropout_frac_voiced: float,
+    dropout_run_ms_p95: float,
+    clip_frac: float,
+    glitch_boundary_jump_ratio_p95: float,
+) -> float:
+    s_sim_tgt = _score_higher_is_better(speaker_similarity_target, good=0.97, bad=0.90)
+    s_sim_margin = _score_higher_is_better(
+        float(speaker_similarity_target - speaker_similarity_source),
+        good=0.05,
+        bad=-0.05,
+    )
+    s_wer = _score_lower_is_better(wer, good=0.55, bad=1.05)
+    s_asr = _asr_confidence_score_v1(
+        asr_avg_logprob_p10=asr_avg_logprob_p10,
+        asr_compression_ratio_p90=asr_compression_ratio_p90,
+    )
+
+    s_silence = _score_lower_is_better(silent_out_db_p95, good=-40.0, bad=-25.0)
+    s_leak_run = _score_lower_is_better(silence_leak_run_ms_p95, good=0.0, bad=250.0)
+    s_dropout = _score_lower_is_better(dropout_frac_voiced, good=0.0, bad=0.01)
+    s_dropout_run = _score_lower_is_better(dropout_run_ms_p95, good=0.0, bad=80.0)
+    s_clip = _score_lower_is_better(clip_frac, good=0.0, bad=0.001)
+    s_glitch = (
+        _score_lower_is_better(glitch_boundary_jump_ratio_p95, good=2.0, bad=8.0)
+        if np.isfinite(glitch_boundary_jump_ratio_p95)
+        else 1.0
+    )
+
+    quality = 0.30 * s_wer + 0.25 * s_sim_tgt + 0.15 * s_sim_margin + 0.30 * s_asr
+    stability = s_silence * s_leak_run * s_dropout * s_dropout_run * s_clip
+
+    return float(_clamp01(quality * stability * s_glitch))
 
 
 class _WavLMSpeakerEmbedder:
@@ -308,13 +447,11 @@ def _score_one(
     src_aligned_path = out_json.parent / f"{deg_wav.stem}.src_aligned.wav"
     write_wav(str(src_aligned_path), src_trim, deg_sr)
 
-    # WER/CER using audio_ref (aligned src) vs deg.
-    wer = compute_wer_whisper(
-        whisper_model, audio_ref_path=str(src_aligned_path), audio_deg_path=str(deg_wav)
-    )
     ref_text = ""
     hyp_text = ""
+    wer = float("nan")
     cer = float("nan")
+    asr_metrics: dict[str, float] = {}
     try:
         ref_asr = (
             whisper_model.transcribe(
@@ -331,7 +468,9 @@ def _score_one(
         )
         ref_text = _normalize_text_for_wer(str(ref_asr.get("text") or ""))
         hyp_text = _normalize_text_for_wer(str(deg_asr.get("text") or ""))
+        wer = _word_error_rate(hyp_text.split(), ref_text.split())
         cer = _char_error_rate(hyp_text, ref_text)
+        asr_metrics = _whisper_confidence_metrics(deg_asr)
     except Exception:
         pass
 
@@ -386,8 +525,58 @@ def _score_one(
         latency_p95_ms=float(latency_p95_ms),
     )
 
+    asr_confidence_v1 = _asr_confidence_score_v1(
+        asr_avg_logprob_p10=float(asr_metrics.get("asr_avg_logprob_p10", float("nan"))),
+        asr_compression_ratio_p90=float(
+            asr_metrics.get("asr_compression_ratio_p90", float("nan"))
+        ),
+    )
+
+    call_score_v2 = _call_score_v2(
+        wer=float(wer) if np.isfinite(wer) else float("nan"),
+        speaker_similarity_target=float(sim_tgt),
+        speaker_similarity_source=float(sim_src),
+        asr_avg_logprob_p10=float(asr_metrics.get("asr_avg_logprob_p10", float("nan"))),
+        asr_compression_ratio_p90=float(
+            asr_metrics.get("asr_compression_ratio_p90", float("nan"))
+        ),
+        silent_out_db_p95=float(am.get("silent_out_db_p95", float("nan"))),
+        silence_leak_run_ms_p95=float(
+            am.get("silence_leak_run_ms_p95", float("nan"))
+        ),
+        dropout_frac_voiced=float(am.get("dropout_frac_voiced", float("nan"))),
+        dropout_run_ms_p95=float(am.get("dropout_run_ms_p95", float("nan"))),
+        clip_frac=float(am.get("clip_frac", float("nan"))),
+        glitch_boundary_jump_ratio_p95=float(
+            gm.get("boundary_jump_ratio_p95", float("nan"))
+        ),
+        rtf_p95=float(rtf_p95),
+        latency_p95_ms=float(latency_p95_ms),
+    )
+
+    ear_score_v2 = _ear_score_v2(
+        wer=float(wer) if np.isfinite(wer) else float("nan"),
+        speaker_similarity_target=float(sim_tgt),
+        speaker_similarity_source=float(sim_src),
+        asr_avg_logprob_p10=float(asr_metrics.get("asr_avg_logprob_p10", float("nan"))),
+        asr_compression_ratio_p90=float(
+            asr_metrics.get("asr_compression_ratio_p90", float("nan"))
+        ),
+        silent_out_db_p95=float(am.get("silent_out_db_p95", float("nan"))),
+        silence_leak_run_ms_p95=float(
+            am.get("silence_leak_run_ms_p95", float("nan"))
+        ),
+        dropout_frac_voiced=float(am.get("dropout_frac_voiced", float("nan"))),
+        dropout_run_ms_p95=float(am.get("dropout_run_ms_p95", float("nan"))),
+        clip_frac=float(am.get("clip_frac", float("nan"))),
+        glitch_boundary_jump_ratio_p95=float(
+            gm.get("boundary_jump_ratio_p95", float("nan"))
+        ),
+    )
+
     report: dict[str, Any] = {
         "report_version": int(REPORT_VERSION),
+        **asr_metrics,
         "speaker_similarity_target": float(sim_tgt),
         "speaker_similarity_source": float(sim_src),
         "speaker_similarity_margin": float(sim_margin),
@@ -408,6 +597,9 @@ def _score_one(
         if np.isfinite(latency_p95_ms)
         else float("nan"),
         "call_score_v1": float(call_score_v1),
+        "asr_confidence_v1": float(asr_confidence_v1),
+        "call_score_v2": float(call_score_v2),
+        "ear_score_v2": float(ear_score_v2),
         **{f"artifact_{k}": float(v) for k, v in am.items()},
         **{f"glitch_{k}": float(v) for k, v in gm.items()},
         **{f"pitch_{k}": float(v) for k, v in pm.items()},
@@ -473,6 +665,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Compute extra pitch preservation metrics (slower).",
+    )
+    parser.add_argument(
+        "--score_key",
+        type=str,
+        default="call_score_v2",
+        choices=["call_score_v1", "call_score_v2", "ear_score_v2"],
+        help="Primary ranking metric for select_best.",
     )
     parser.add_argument(
         "--resume",
@@ -550,7 +749,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Select best config.
     from evaluation.vc_quest.select_best import main as select_best
 
-    select_best(["--run_dir", str(run_dir)])
+    select_best(["--run_dir", str(run_dir), "--score_key", str(args.score_key)])
     return 0
 
 
