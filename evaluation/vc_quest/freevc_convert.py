@@ -21,10 +21,12 @@ import torch
 from evaluation.vc_quest.streaming_utils import (
     AudioRingBuffer,
     apply_peak_limiter,
+    build_rms_mask,
     crossfade_prefix_inplace,
     is_silent_rms_db,
     is_voiced_webrtcvad,
     normalize_length,
+    rms_db,
 )
 
 
@@ -43,6 +45,14 @@ class StreamConfig:
     vad_webrtc_aggressiveness: int
     vad_webrtc_frame_ms: int
     vad_webrtc_min_voiced_ratio: float
+    gain_mode: str
+    gain_target_delta_db: float
+    gain_max_boost_db: float
+    gain_smoothing: float
+    mask_mode: str
+    mask_db: float
+    mask_frame_ms: float
+    mask_smooth_ms: float
     peak_limit: float
 
 
@@ -226,6 +236,44 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--vad_webrtc_frame_ms", type=int, default=30, choices=[10, 20, 30]
     )
     parser.add_argument("--vad_webrtc_min_voiced_ratio", type=float, default=0.1)
+
+    parser.add_argument(
+        "--gain_mode",
+        type=str,
+        default="off",
+        choices=["off", "match_src_rms"],
+        help="Optional loudness compensation for streaming stability.",
+    )
+    parser.add_argument(
+        "--gain_target_delta_db",
+        type=float,
+        default=10.0,
+        help="When gain_mode=match_src_rms, aim for output RMS ≈ (input RMS - gain_target_delta_db).",
+    )
+    parser.add_argument(
+        "--gain_max_boost_db",
+        type=float,
+        default=18.0,
+        help="Maximum gain boost applied by match_src_rms.",
+    )
+    parser.add_argument(
+        "--gain_smoothing",
+        type=float,
+        default=0.0,
+        help="Exponential smoothing factor for gain (0=no smoothing, 0.9=heavy smoothing).",
+    )
+
+    parser.add_argument(
+        "--mask_mode",
+        type=str,
+        default="off",
+        choices=["off", "rms"],
+        help="Optional output masking to suppress silence noise.",
+    )
+    parser.add_argument("--mask_db", type=float, default=-50.0)
+    parser.add_argument("--mask_frame_ms", type=float, default=10.0)
+    parser.add_argument("--mask_smooth_ms", type=float, default=10.0)
+
     parser.add_argument("--peak_limit", type=float, default=0.99)
     args = parser.parse_args(argv)
 
@@ -372,6 +420,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             np.ceil(float(args.vad_hangover_ms) / max(float(args.hop_ms), 1e-6))
         )
         hangover_left = 0
+        gain_db_state = 0.0
 
         for start in range(0, len(src_16k), hop_in):
             hop = src_16k[start : start + hop_in]
@@ -454,6 +503,33 @@ def main(argv: Optional[list[str]] = None) -> int:
                     np.float32, copy=False
                 )
 
+            gain_mode = str(args.gain_mode)
+            if voiced and gain_mode == "match_src_rms":
+                alpha = float(np.clip(float(args.gain_smoothing), 0.0, 0.999))
+                src_db = rms_db(vad_segment, eps=1e-9)
+                out_db = rms_db(out_hop, eps=1e-9)
+                desired_boost_db = (src_db - out_db) - float(args.gain_target_delta_db)
+                desired_boost_db = float(
+                    np.clip(desired_boost_db, 0.0, float(args.gain_max_boost_db))
+                )
+                gain_db_state = alpha * gain_db_state + (1.0 - alpha) * desired_boost_db
+                gain = float(10.0 ** (gain_db_state / 20.0))
+                out_hop = (out_hop * gain).astype(np.float32, copy=False)
+            elif not voiced:
+                gain_db_state *= float(np.clip(float(args.gain_smoothing), 0.0, 0.999))
+
+            if str(args.mask_mode) == "rms":
+                mask = build_rms_mask(
+                    vad_segment,
+                    in_sample_rate=in_sr,
+                    out_sample_rate=out_sr,
+                    out_len=hop_out,
+                    frame_ms=float(args.mask_frame_ms),
+                    threshold_db=float(args.mask_db),
+                    smooth_ms=float(args.mask_smooth_ms),
+                )
+                out_hop = (out_hop * mask).astype(np.float32, copy=False)
+
             out_hop = crossfade_prefix_inplace(out_hop, prev_tail, fade_out)
             out_hop = apply_peak_limiter(out_hop, peak_limit=float(args.peak_limit))
             if fade_out > 0:
@@ -500,6 +576,14 @@ def main(argv: Optional[list[str]] = None) -> int:
                 vad_webrtc_aggressiveness=int(args.vad_webrtc_aggressiveness),
                 vad_webrtc_frame_ms=int(args.vad_webrtc_frame_ms),
                 vad_webrtc_min_voiced_ratio=float(args.vad_webrtc_min_voiced_ratio),
+                gain_mode=str(args.gain_mode),
+                gain_target_delta_db=float(args.gain_target_delta_db),
+                gain_max_boost_db=float(args.gain_max_boost_db),
+                gain_smoothing=float(args.gain_smoothing),
+                mask_mode=str(args.mask_mode),
+                mask_db=float(args.mask_db),
+                mask_frame_ms=float(args.mask_frame_ms),
+                mask_smooth_ms=float(args.mask_smooth_ms),
                 peak_limit=float(args.peak_limit),
             )
             if bool(args.stream)

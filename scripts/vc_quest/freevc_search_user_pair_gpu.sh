@@ -38,6 +38,16 @@ VAD_WEBRTC_MIN_VOICED_RATIO="${VAD_WEBRTC_MIN_VOICED_RATIO:-0.1}"
 EMIT_ALIGN="${EMIT_ALIGN:-center}"
 PEAK_LIMIT="${PEAK_LIMIT:-0.99}"
 
+GAIN_MODE="${GAIN_MODE:-off}"
+GAIN_TARGET_DELTA_DB="${GAIN_TARGET_DELTA_DB:-10.0}"
+GAIN_MAX_BOOST_DB="${GAIN_MAX_BOOST_DB:-18.0}"
+GAIN_SMOOTHING="${GAIN_SMOOTHING:-0.0}"
+
+MASK_MODE="${MASK_MODE:-off}"
+MASK_DB="${MASK_DB:--50.0}"
+MASK_FRAME_MS="${MASK_FRAME_MS:-10.0}"
+MASK_SMOOTH_MS="${MASK_SMOOTH_MS:-10.0}"
+
 source "${CONDA_SH}"
 conda activate "${ENV_NAME}"
 
@@ -96,6 +106,14 @@ for window_ms in ${WINDOWS_MS}; do
       --vad_webrtc_aggressiveness "${VAD_WEBRTC_AGGRESSIVENESS}" \
       --vad_webrtc_frame_ms "${VAD_WEBRTC_FRAME_MS}" \
       --vad_webrtc_min_voiced_ratio "${VAD_WEBRTC_MIN_VOICED_RATIO}" \
+      --gain_mode "${GAIN_MODE}" \
+      --gain_target_delta_db "${GAIN_TARGET_DELTA_DB}" \
+      --gain_max_boost_db "${GAIN_MAX_BOOST_DB}" \
+      --gain_smoothing "${GAIN_SMOOTHING}" \
+      --mask_mode "${MASK_MODE}" \
+      --mask_db "${MASK_DB}" \
+      --mask_frame_ms "${MASK_FRAME_MS}" \
+      --mask_smooth_ms "${MASK_SMOOTH_MS}" \
       --peak_limit "${PEAK_LIMIT}"
 
     python -m evaluation.vc_quest.freevc_convert \
@@ -119,6 +137,14 @@ for window_ms in ${WINDOWS_MS}; do
       --vad_webrtc_aggressiveness "${VAD_WEBRTC_AGGRESSIVENESS}" \
       --vad_webrtc_frame_ms "${VAD_WEBRTC_FRAME_MS}" \
       --vad_webrtc_min_voiced_ratio "${VAD_WEBRTC_MIN_VOICED_RATIO}" \
+      --gain_mode "${GAIN_MODE}" \
+      --gain_target_delta_db "${GAIN_TARGET_DELTA_DB}" \
+      --gain_max_boost_db "${GAIN_MAX_BOOST_DB}" \
+      --gain_smoothing "${GAIN_SMOOTHING}" \
+      --mask_mode "${MASK_MODE}" \
+      --mask_db "${MASK_DB}" \
+      --mask_frame_ms "${MASK_FRAME_MS}" \
+      --mask_smooth_ms "${MASK_SMOOTH_MS}" \
       --peak_limit "${PEAK_LIMIT}"
   done
 done
