@@ -20,7 +20,8 @@ They are meant to be the “known good” starting points.
 
 - **FreeVC (quality-first, decent call UX):** `bash scripts/vc_quest/presets/freevc_fleurs_fr_quality.sh`
 - **FreeVC (call-latency-first):** `bash scripts/vc_quest/presets/freevc_fleurs_fr_call_latency.sh`
-- **ClassicVC/MMCXLI (call UX candidate):** `bash scripts/vc_quest/presets/classicvc_fleurs_fr_call_latency.sh`
+- **ClassicVC/MMCXLI (quality-first, still call-usable):** `bash scripts/vc_quest/presets/classicvc_fleurs_fr_quality.sh`
+- **ClassicVC/MMCXLI (call-latency-first):** `bash scripts/vc_quest/presets/classicvc_fleurs_fr_call_latency.sh`
 - **ChatterboxVC (quality/stability reference):** `bash scripts/vc_quest/presets/chatterbox_fleurs_fr_quality.sh`
 
 Tips:
@@ -33,9 +34,9 @@ Outputs:
   - `wavs/*.wav`, `meta/*.json`, `summary.json`
 
 Latest results (Vast RTX 4090, WER_MODE=`audio_ref`, Whisper `base` language=`fr`, 300 pairs):
-- **ClassicVC/MMCXLI** (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w800_h400_end_full/summary.json`)
-  - call_score_v1 mean≈0.211, latency_p95_ms mean≈222, rtf_p95 mean≈0.055
-  - WER mean≈0.768, S-SIM(target) mean≈0.899
+- **ClassicVC/MMCXLI** (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w1200_h400_end_full/summary.json`)
+  - call_score_v1 mean≈0.234, latency_p95_ms mean≈224, rtf_p95 mean≈0.060
+  - WER mean≈0.748, S-SIM(target) mean≈0.903
   - Stable: dropouts (`dropout>0.01`): 3/300, silence/clip gates 0/300
 - **FreeVC** (call-latency preset, `runs/vc_quest/playlists/fleurs_fr_fr/freevc_w800_h400_end_full/summary_audio_ref.json`)
   - call_score_v1 mean≈0.122, latency_p95_ms mean≈272, rtf_p95 mean≈0.179
@@ -469,10 +470,11 @@ Not actionable yet (paper/demo only or no public checkpoints):
   - Weights are pulled from HF (`lyodos/classic-vc`) by `scripts/vc_quest/classicvc_setup_gpu.sh`.
 
 - Results (Vast RTX 4090, FLEURS fr_fr, stream sim `w800/h400`, `emit_align=end`, WER_MODE=`audio_ref`, 300 pairs):
-  - `runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w800_h400_end_full/summary.json`
-  - call_score_v1 mean≈0.211, latency_p95_ms mean≈222, rtf_p95 mean≈0.055
-  - WER mean≈0.768, S-SIM(target) mean≈0.899
+  - `runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w1200_h400_end_full/summary.json`
+  - call_score_v1 mean≈0.234, latency_p95_ms mean≈224, rtf_p95 mean≈0.060
+  - WER mean≈0.748, S-SIM(target) mean≈0.903
   - Gates: dropouts (`dropout>0.01`): 3/300, silence/clip gates 0/300
+  - Note: `w800/h400` is slightly worse on metrics but has lower startup buffer (0.8s vs 1.2s).
 
 - Conclusion: currently our best “call-latency + intelligibility” pipeline on the French playlist. Speaker similarity is lower than FreeVC/Chatterbox, but content is stronger than FreeVC and latency is far better than Chatterbox.
 
