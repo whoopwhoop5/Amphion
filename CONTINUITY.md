@@ -119,6 +119,7 @@
     - Chatterbox: `chatterbox_w800_h400_s8_mask_gain5_full/summary_audio_ref.json` WER mean≈0.617, but call_score_v1 still 0 due to latency_p95_ms≈797ms.
   - FreeVC VAD/fade sweep (Vast, MAX_PAIRS=50): hangover/aggr/db/fade tweaks did not reduce voiced-dropout cases (dropout>0.01 stayed 3/50 across runs), suggesting dropouts are largely model-inherent at this config.
   - Added FreeVC gain/mask controls to streaming conversion + scripts (commit `63467d4`) and smoke-tested: gain+mask improves glitch metrics and modestly improves call_score on the smoke subset, but does not eliminate voiced-dropout cases.
+  - Added “known-good” preset runner scripts for FLEURS fr_fr: `scripts/vc_quest/presets/*` (FreeVC: quality vs call-latency; Chatterbox: quality reference).
 - Now: VC quest: FreeVC remains the only call-latency candidate (≈270–320ms latency_p95 on Vast with emit_align=end), but intelligibility (Whisper WER) + voiced-dropout cases remain the main blockers.
 - Next:
   - Decide whether to adopt gain/mask for FreeVC and re-run a full 300-pair evaluation for the best settings.

@@ -14,6 +14,18 @@ Single “user pair” is useful for fast iteration, but it can overfit. For a s
 - Run + score FreeVC on the playlist (RTX 4090): `bash scripts/vc_quest/freevc_run_fleurs_fr_playlist_gpu.sh`
 - Run + score ChatterboxVC on the playlist (RTX 4090): `bash scripts/vc_quest/chatterbox_run_fleurs_fr_playlist_gpu.sh`
 
+## Presets (recommended)
+These wrappers pin the best *validated* configs from our vc_quest evals and run the French playlist.
+They are meant to be the “known good” starting points.
+
+- **FreeVC (quality-first, decent call UX):** `bash scripts/vc_quest/presets/freevc_fleurs_fr_quality.sh`
+- **FreeVC (call-latency-first):** `bash scripts/vc_quest/presets/freevc_fleurs_fr_call_latency.sh`
+- **ChatterboxVC (quality/stability reference):** `bash scripts/vc_quest/presets/chatterbox_fleurs_fr_quality.sh`
+
+Tips:
+- Use `MAX_PAIRS=50` for smoke tests (defaults to full `0`).
+- Results go to `runs/vc_quest/playlists/fleurs_fr_fr/${RUN_NAME}/`.
+
 Outputs:
 - Playlist manifest: `data/vc_quest_playlists/fleurs_fr_fr_dev_v1/manifest.json`
 - Run artifacts: `runs/vc_quest/playlists/fleurs_fr_fr/*/`
