@@ -1,0 +1,87 @@
+You are a deep research agent. Your job is to find NEW (≤2 years old) public voice-conversion projects that ship with usable pretrained weights and could plausibly replace our current best pipelines for real-time “live call” voice-to-voice timbre cloning.
+
+DATE WINDOW
+- Only include projects/papers/repos with a release/publication date OR first public repo availability
+between: 2024-01-13 and today (today=2026-01-13).
+- If a paper is older but the repo+weights were released/updated within the window, include it but clearly
+label “paper older; repo/weights recent”.
+
+WHAT WE WANT (our target use case)
+- Task: voice conversion / voice changer / timbre conversion (audio→audio), NOT TTS voice cloning
+(text→speech).
+- Prefer: zero-shot or few-shot conditioning from a short reference clip (no per-target training).
+- NEW: We are OK with per-target training now if it produces clearly better call-UX + quality; include such systems, but label them as “training-required” and summarize data/time requirements.
+- But: do NOT filter out hits just because streaming is unclear; we will test streaming ourselves.
+- Must have: publicly downloadable pretrained weights + runnable inference code.
+- Prefer: permissive or clear license; note any restrictions.
+
+OUR CURRENT BASELINES (what candidates should aim to beat)
+- ClassicVC/MMCXLI (current best call-latency baseline): very low latency + better intelligibility than FreeVC, but weaker identity match.
+- On our French playlist (FLEURS fr_fr, 300 pairs): latency_p95 ≈ 224ms, WER ≈ 0.75, speaker similarity ≈ 0.90.
+- FreeVC (best call-latency config): low latency + better identity than ClassicVC, but weak intelligibility + frequent dropouts.
+- On our French playlist (FLEURS fr_fr, 300 pairs): latency_p95 ≈ 286ms, WER ≈ 0.93, dropouts in ~30/300.
+- ChatterboxVC: much better WER/content and stable, but too high latency for call UX.
+- latency_p95 ≈ 797ms, WER ≈ 0.62 (audio_ref ≈ 0.62), dropouts 0/300.
+Goal: find something closer to Chatterbox’s content/stability but with ClassicVC/FreeVC-like latency, ideally without the FreeVC dropout problem and with stronger identity than ClassicVC.
+
+WHAT WE ALREADY TRIED (DO NOT RETURN THESE as “new candidates”)
+- FreeVC
+- ChatterboxVC
+- ClassicVC/MMCXLI (ClassicVC / MMCXLI)
+- MeanVC
+- Seed-VC
+- kNN-VC
+- OpenVoice (tone-color)
+- SpeechT5 VC
+- GenVC
+- Conan
+- QuickVC
+- TinyVC
+- FragmentVC
+- EZ-VC
+- SaMoye-SVC
+- YingMusic-SVC
+- FACodec (NaturalSpeech3 facodec VC)
+- Metis-VC / Metis-Omni
+- VTuber BowTie (fixed-target voice changer; not ref-clip any-to-any)
+- GPT-SoVITS was evaluated only as ASR→TTS speech-to-speech (upstream VC tab is under construction) — not aligned VC
+- Vevo (Amphion) is our internal baseline; not a candidate search result
+- HiFi-VC was blocked due to dead pretrained link (only include if you find a working weights mirror/release within the date window)
+
+SEARCH SCOPE / KEYWORDS (use many variations)
+- “zero-shot voice conversion” / “any-to-any voice conversion”
+- “real-time voice conversion” / “online voice conversion” / “streaming voice conversion”
+- “prompt-based speech-to-speech” / “reference speech conditioned conversion”
+- “codec voice conversion” / “speech codec VC” / “discrete units voice conversion”
+- “causal vocoder voice conversion” / “low-latency voice changer”
+Also search on: arXiv, GitHub, HuggingFace (models + spaces), PapersWithCode, project pages.
+
+HARD REQUIREMENTS FOR INCLUSION
+For each candidate you list, you MUST verify and report:
+1) Repo link (GitHub) AND paper/project link (arXiv/project page) if available.
+2) Where the pretrained weights are (HF model, GitHub Release, Drive, etc.) and whether the link is
+reachable.
+3) A minimal inference entrypoint (script/notebook/CLI) that can run without training (for zero-shot), OR a minimal “train this target voice then run inference” recipe (for training-required).
+4) License (or note “missing/unclear”).
+
+DO NOT OVER-FILTER ON STREAMING
+- Many repos won’t claim streaming; still include them if they are audio→audio VC with weights and could be
+wrapped into streaming windows (we will test).
+- Do not exclude diffusion/flow/transformer models unless they clearly cannot run without long context or have no inference code.
+
+WHAT TO OUTPUT (structured, actionable)
+Return:
+A) Top 10–20 “Actionable candidates (weights + inference)” with a compact table containing:
+- Name
+- Year/date (paper + repo/weights release date)
+- Task type (VC/audio→audio vs TTS)
+- Conditioning (reference-clip? speaker encoder? prompt?)
+- Model family (unit-based / codec-based / diffusion / flow / GAN / etc.)
+- Inference entrypoint (exact file/command if documented)
+- Weights location (exact HF model / release tag / URL)
+- License
+- Notes: why it might beat FreeVC for call UX (speed/causal/codec/etc.), plus risks (gated weights, heavy deps, unclear license)
+
+B) A separate list: “Interesting but NOT actionable” (no weights / gated / broken links) — keep short, but include links.
+
+C) OPTIONAL: If you find a strong repo that requires per-target training but is clearly state-of-the-art for low-latency voice changing, list it under “Training-required alternatives” and label clearly.
