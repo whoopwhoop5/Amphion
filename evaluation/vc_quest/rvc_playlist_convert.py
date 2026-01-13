@@ -167,6 +167,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    manifest_path = Path(args.manifest).resolve()
+    out_root = Path(args.out_dir).resolve()
+
     rvc_dir = os.path.abspath(str(args.rvc_dir))
     if not os.path.isdir(rvc_dir):
         raise FileNotFoundError(f"rvc_dir not found: {rvc_dir}")
@@ -181,7 +184,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     in_sr = 16000
     out_sr = int(args.resample_sr) if int(args.resample_sr) >= 16000 else int(vc.tgt_sr)
 
-    manifest = load_vc_playlist_manifest(args.manifest).resolve_paths(args.manifest)
+    manifest = load_vc_playlist_manifest(manifest_path).resolve_paths(manifest_path)
     sources = manifest.sources_by_id()
     targets = manifest.targets_by_id()
     pairs = list(manifest.pairs)
@@ -192,7 +195,6 @@ def main(argv: Optional[list[str]] = None) -> int:
     for pair_idx, pair in enumerate(pairs):
         pairs_by_target.setdefault(pair.target_id, []).append((pair_idx, pair.source_id))
 
-    out_root = Path(args.out_dir)
     wav_dir = out_root / "wavs"
     meta_dir = out_root / "meta"
     wav_dir.mkdir(parents=True, exist_ok=True)
@@ -440,7 +442,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             out_meta.write_text(json.dumps({"config": cfg, "stats": stats}, indent=2))
 
     meta = {
-        "manifest": str(Path(args.manifest).resolve()),
+        "manifest": str(manifest_path),
         "model": "rvc",
         "stream": bool(args.stream),
         "out_sample_rate": int(out_sr),
@@ -453,4 +455,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
