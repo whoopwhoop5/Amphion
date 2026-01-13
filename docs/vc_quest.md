@@ -513,6 +513,22 @@ Not actionable yet (paper/demo only or no public checkpoints):
   - `fr_to_v5_s2s`: speaker_similarity_target≈0.337, WER≈0.941, duration_ratio≈1.51
 - Conclusion: not viable for call-grade French VC. Outputs are **not time-aligned**, and content preservation collapses (very high WER) even though generation is fast (RTF≈0.23).
 
+### 22) MNP-SVC (TylorShine/MNP-SVC)
+- Bead: `Amphion-ehh.26`
+- Status: evaluated (reject)
+- Notes:
+  - MNP-SVC is primarily a **singing voice conversion** project (DDSP-style synthesis) but can be run on speech.
+  - Our wrapper uses reference-clip conditioning by extracting a speaker embedding with pyannote/wespeaker (no target training).
+- Implementation: `evaluation/vc_quest/mnpsvc_convert.py`, `evaluation/vc_quest/mnpsvc_playlist_convert.py`, `scripts/vc_quest/mnpsvc_*`
+- Artifacts (Vast):
+  - User-pair: `runs/vc_quest/mnpsvc/user_pair/*`
+  - Playlist smoke (50): `runs/vc_quest/playlists/fleurs_fr_fr/mnpsvc_w800_h400_end_smoke50/summary.json`
+- Results (Vast RTX 4090, FLEURS fr_fr, smoke `w800/h400`, `emit_align=end`, WER_MODE=`audio_ref`, 50 pairs):
+  - call_score_v1 mean≈0.130, call_score_v2 mean≈0.149, ear_score_v2 mean≈0.165
+  - latency_p95_ms mean≈235, rtf_p95 mean≈0.087
+  - WER mean≈0.976, S-SIM(target) mean≈0.834, dropouts 0/50
+- Conclusion: fast and stable, but **speaker similarity is noticeably worse** than our top call-UX candidate (ClassicVC) and content is not competitive. Not promoted to a full 300-pair run.
+
 ## What we record for each candidate
 - **Streaming config:** sample rate, chunk/window, hop, crossfade/OLA, VAD settings, any lookahead.
 - **Speed:** mean/p95 chunk processing time, estimated RTF on RTX 4090.
