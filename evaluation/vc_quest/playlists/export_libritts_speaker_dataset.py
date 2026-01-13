@@ -268,7 +268,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         uid = str(row.get("uid") or r.uid)
         text = str(row.get("text") or "")
 
-        wav_path = wav_dir / f"{speaker_id}_{idx:05d}.wav"
+        rel_wav = Path("wavs") / f"{speaker_id}_{idx:05d}.wav"
+        wav_path = out_dir / rel_wav
         dur_sec, sr = _write_audio_as_wav(wav_path, audio=audio, target_sr=int(args.target_sr))
         if not (float(args.min_sec) <= float(dur_sec) <= float(args.max_sec)):
             try:
@@ -279,7 +280,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         exported.append(
             {
-                "wav_path": str(wav_path),
+                "wav_path": str(rel_wav),
                 "speaker_id": speaker_id,
                 "uid": uid,
                 "text": text,

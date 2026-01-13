@@ -75,11 +75,25 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not ref_wav_path:
         raise RuntimeError(f"Missing ref_wav_path in target manifest meta: {target_manifest_path}")
 
-    ref_wav_abs = Path(ref_wav_path)
-    if not ref_wav_abs.is_absolute():
-        ref_wav_abs = (target_manifest_path.parent / ref_wav_abs).resolve()
-    if not ref_wav_abs.is_file():
-        raise FileNotFoundError(f"ref_wav_path not found: {ref_wav_abs}")
+    ref_wav_abs: Path
+    ref_wav_p = Path(ref_wav_path)
+    if ref_wav_p.is_absolute():
+        candidates = [ref_wav_p]
+    else:
+        # Support both:
+        # - paths relative to the target manifest dir (recommended)
+        # - paths relative to the repo cwd (older exports sometimes included the out_dir prefix)
+        candidates = [
+            (target_manifest_path.parent / ref_wav_p),
+            (Path.cwd() / ref_wav_p),
+        ]
+
+    for cand in candidates:
+        if cand.is_file():
+            ref_wav_abs = cand.resolve()
+            break
+    else:
+        raise FileNotFoundError(f"ref_wav_path not found: tried {candidates}")
 
     out_dir = Path(str(args.out_dir).strip()) if str(args.out_dir).strip() else None
     if out_dir is None:
