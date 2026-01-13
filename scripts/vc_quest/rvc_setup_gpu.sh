@@ -15,7 +15,7 @@ CONDA_BIN="${MINIFORGE_ROOT}/bin/conda"
 CONDA_SH="${MINIFORGE_ROOT}/etc/profile.d/conda.sh"
 
 ENV_NAME="rvc"
-PYTHON_VERSION="${PYTHON_VERSION:-3.11}"
+RVC_PYTHON_VERSION="${RVC_PYTHON_VERSION:-3.11}"
 
 DEPS_DIR="${HOME}/deps"
 RVC_DIR="${DEPS_DIR}/rvc_webui"
@@ -38,9 +38,21 @@ fi
 
 source "${CONDA_SH}"
 
+if "${CONDA_BIN}" env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
+  cur_py="$("${CONDA_BIN}" run -n "${ENV_NAME}" python - <<'PY'
+import sys
+print(f"{sys.version_info.major}.{sys.version_info.minor}")
+PY
+)"
+  if [[ "${cur_py}" != "${RVC_PYTHON_VERSION}" ]]; then
+    echo "[rvc_setup] Recreating conda env ${ENV_NAME} (python=${cur_py} != ${RVC_PYTHON_VERSION})"
+    "${CONDA_BIN}" remove -y -n "${ENV_NAME}" --all
+  fi
+fi
+
 if ! "${CONDA_BIN}" env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
-  echo "[rvc_setup] Creating conda env ${ENV_NAME} (python=${PYTHON_VERSION})"
-  "${CONDA_BIN}" create -y -n "${ENV_NAME}" "python=${PYTHON_VERSION}"
+  echo "[rvc_setup] Creating conda env ${ENV_NAME} (python=${RVC_PYTHON_VERSION})"
+  "${CONDA_BIN}" create -y -n "${ENV_NAME}" "python=${RVC_PYTHON_VERSION}"
 fi
 
 conda activate "${ENV_NAME}"
@@ -61,4 +73,3 @@ echo "[rvc_setup] Downloading RVC base models (hubert/rmvpe/pretrained)"
 python "${RVC_DIR}/tools/download_models.py"
 
 echo "[rvc_setup] Done. Activate with: source ${CONDA_SH} && conda activate ${ENV_NAME}"
-
