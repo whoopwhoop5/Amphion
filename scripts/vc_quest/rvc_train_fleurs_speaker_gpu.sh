@@ -212,6 +212,7 @@ else
 fi
 
 echo "[rvc_train] Train (this can take a while)"
+set +e
 python infer/modules/train/train.py \
   -e "${EXP_NAME}" \
   -sr "${RVC_SR}" \
@@ -226,6 +227,15 @@ python infer/modules/train/train.py \
   -c "${CACHE_GPU}" \
   -sw "${SAVE_EVERY_WEIGHTS}" \
   -v "${RVC_VERSION}"
+train_rc=$?
+set -e
+
+# RVC's train.py terminates with os._exit(2333333) when it reaches total_epoch.
+# This maps to a non-zero shell exit code; treat that as success.
+if [[ "${train_rc}" -ne 0 && "${train_rc}" -ne 149 ]]; then
+  echo "[rvc_train] train.py failed (rc=${train_rc})" >&2
+  exit "${train_rc}"
+fi
 
 echo "[rvc_train] Train faiss index"
 EXP_NAME="${EXP_NAME}" RVC_VERSION="${RVC_VERSION}" python - <<'PY'
