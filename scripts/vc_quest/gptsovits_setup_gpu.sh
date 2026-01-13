@@ -34,6 +34,9 @@ fi
 conda activate "${ENV_NAME}"
 cd "${GPTSOVITS_DIR}"
 
+# install.sh uses `tput` for UX; make it work under nohup/non-interactive shells.
+export TERM="${TERM:-xterm}"
+
 # Install deps + download pretrained models.
 bash install.sh --device "${DEVICE}" --source "${SOURCE}"
 
@@ -42,4 +45,3 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
 fi
 
 echo "[gptsovits_setup] Done. Repo=${GPTSOVITS_DIR} env=${ENV_NAME} device=${DEVICE} source=${SOURCE}"
-
