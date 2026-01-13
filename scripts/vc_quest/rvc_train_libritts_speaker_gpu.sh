@@ -22,6 +22,12 @@ if [[ ! -d "${RVC_DIR}" ]]; then
   exit 1
 fi
 
+# HF cache: Vast machines often mount a small /workspace; force cache onto the main disk.
+HF_HOME_DIR="${HF_HOME_DIR:-${HOME}/.hf_home}"
+export HF_HOME="${HF_HOME_DIR}"
+export HF_HUB_CACHE="${HF_HOME}/hub"
+mkdir -p "${HF_HUB_CACHE}"
+
 REPO_ID="${REPO_ID:-mythicinfinity/libritts}"
 SPLIT="${SPLIT:-train.clean.100}"
 SPEAKER_ID="${SPEAKER_ID:-}" # empty => auto-pick
