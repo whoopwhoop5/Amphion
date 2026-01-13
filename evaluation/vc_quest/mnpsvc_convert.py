@@ -113,6 +113,34 @@ def _add_sys_path_first(path: str) -> None:
     sys.path.insert(0, path)
 
 
+def _prefer_mnpsvc_modules(mnpsvc_dir: str) -> None:
+    """Ensure MNP-SVC's `modules/*` wins over Amphion's `modules/*`.
+
+    MNP-SVC's repo uses a namespace package `modules/` (no __init__.py), while Amphion
+    has a regular package `modules/__init__.py`. Python will prefer the regular package
+    even if the namespace portion appears earlier on sys.path, so we must remove Amphion's
+    repo root from sys.path and clear any previously imported `modules.*` symbols.
+    """
+
+    mnpsvc_dir = os.path.abspath(str(mnpsvc_dir))
+    amphion_root = str(Path(__file__).resolve().parents[2])
+    cwd_abs = os.path.abspath(os.getcwd())
+
+    new_path: list[str] = []
+    for p in sys.path:
+        p_abs = os.path.abspath(p) if p else cwd_abs
+        if p_abs == amphion_root:
+            continue
+        new_path.append(p)
+    sys.path = new_path
+
+    _add_sys_path_first(mnpsvc_dir)
+
+    for k in list(sys.modules.keys()):
+        if k == "modules" or k.startswith("modules."):
+            del sys.modules[k]
+
+
 def _build_response_mask(volume: np.ndarray, *, response_threshold_db: float) -> np.ndarray:
     vol = np.asarray(volume, dtype=np.float32).reshape(-1)
     if len(vol) == 0:
@@ -256,7 +284,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not os.path.isfile(model_path):
         raise FileNotFoundError(f"model_path not found: {model_path}")
 
-    _add_sys_path_first(mnpsvc_dir)
+    _prefer_mnpsvc_modules(mnpsvc_dir)
     from modules.extractors import F0Extractor, SpeakerEmbedEncoder, UnitsEncoder, VolumeExtractor  # type: ignore[import-not-found]
     from modules.extractors.common import upsample  # type: ignore[import-not-found]
     from modules.vocoder import load_model  # type: ignore[import-not-found]

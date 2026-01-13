@@ -73,6 +73,28 @@ def _add_sys_path_first(path: str) -> None:
     sys.path.insert(0, path)
 
 
+def _prefer_mnpsvc_modules(mnpsvc_dir: str) -> None:
+    """Ensure MNP-SVC's `modules/*` wins over Amphion's `modules/*`."""
+
+    mnpsvc_dir = os.path.abspath(str(mnpsvc_dir))
+    amphion_root = str(Path(__file__).resolve().parents[2])
+    cwd_abs = os.path.abspath(os.getcwd())
+
+    new_path: list[str] = []
+    for p in sys.path:
+        p_abs = os.path.abspath(p) if p else cwd_abs
+        if p_abs == amphion_root:
+            continue
+        new_path.append(p)
+    sys.path = new_path
+
+    _add_sys_path_first(mnpsvc_dir)
+
+    for k in list(sys.modules.keys()):
+        if k == "modules" or k.startswith("modules."):
+            del sys.modules[k]
+
+
 def _case_id(source_id: str, target_id: str) -> str:
     return f"{source_id}__to__{target_id}"
 
@@ -207,7 +229,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not os.path.isfile(model_path):
         raise FileNotFoundError(f"model_path not found: {model_path}")
 
-    _add_sys_path_first(mnpsvc_dir)
+    _prefer_mnpsvc_modules(mnpsvc_dir)
     from modules.extractors import F0Extractor, SpeakerEmbedEncoder, UnitsEncoder, VolumeExtractor  # type: ignore[import-not-found]
     from modules.extractors.common import upsample  # type: ignore[import-not-found]
     from modules.vocoder import load_model  # type: ignore[import-not-found]
@@ -534,4 +556,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
