@@ -35,11 +35,15 @@ conda activate "${ENV_NAME}"
 
 python -m pip install -U pip setuptools wheel
 
-# GPU torch (cu121) is sufficient on the RTX 4090 instance.
-python -m pip install -U --index-url https://download.pytorch.org/whl/cu121 torch torchaudio torchvision
+# pyannote.audio pulls in Lightning/TorchMetrics which imports torchvision.
+# Keep torch/torchaudio/torchvision on a consistent CUDA build to avoid runtime
+# errors like "operator torchvision::nms does not exist".
+TORCH_INDEX_URL="https://download.pytorch.org/whl/cu128"
+python -m pip install -U --index-url "${TORCH_INDEX_URL}" \
+  torch==2.8.0+cu128 torchaudio==2.8.0+cu128 torchvision==0.23.0+cu128
 
 # Minimal deps for inference + our wrappers.
-python -m pip install -U numpy scipy soundfile librosa resampy PyYAML tqdm pyworld torchcrepe onnxruntime huggingface_hub accelerate pyannote.audio
+python -m pip install -U numpy scipy soundfile librosa resampy PyYAML tqdm pyworld torchcrepe onnxruntime huggingface_hub accelerate pyannote.audio==4.0.3
 
 if [[ ! -d "${MNP_SVC_DIR}" ]]; then
   echo "[mnpsvc_setup] Cloning MNP-SVC to ${MNP_SVC_DIR}"
@@ -101,4 +105,3 @@ copy_hf("TylorShine/MNP-SVC-v2-VCTK", "spk_info.npz", "models/pretrained/mnp-svc
 PY
 
 echo "[mnpsvc_setup] Done. Activate with: source ${CONDA_SH} && conda activate ${ENV_NAME}"
-
