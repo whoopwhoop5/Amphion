@@ -139,9 +139,12 @@
   - Vast rescoring queued to write `summary_ear_v2.json` for key full runs (ClassicVC/FreeVC/Chatterbox).
 - VC quest (2026-01-13):
   - Evaluated GPT-SoVITS as an ASR→TTS speech-to-speech “voice changer” (upstream VC tab is marked under construction). Setup is now robust under nohup and installs TorchCodec; wrapper fixes import shadowing (`models` collision). Results are not competitive for French (very high WER, non-aligned duration drift) → reject. Artifacts: `runs/vc_quest/gptsovits/user_pair/*`.
-- Now: VC quest: ClassicVC/MMCXLI is currently the best call-latency candidate on FLEURS fr_fr (lower latency + better WER than FreeVC), but speaker similarity is lower than FreeVC/Chatterbox. Chatterbox remains the quality/stability reference but has ~0.8s latency at the realtime config (`call_score_v1=0` under strict threshold). Vast is rescoring full runs with the new auto-ear metrics (`summary_ear_v2.json`). GPT-SoVITS rejected for French VC (ASR→TTS, not aligned).
+- VC quest (2026-01-13):
+  - Evaluated MNP-SVC (DDSP-style singing VC) as a call-VC candidate using reference-clip speaker embeddings. Smoke results are not competitive (lower speaker similarity + worse WER than ClassicVC/FreeVC) → reject. Artifacts: `runs/vc_quest/mnpsvc/user_pair/*`, `runs/vc_quest/playlists/fleurs_fr_fr/mnpsvc_w800_h400_end_smoke50/summary.json`.
+- Now: VC quest: ClassicVC/MMCXLI is currently the best call-latency candidate on FLEURS fr_fr (lower latency + much better WER than FreeVC), but speaker similarity is lower than FreeVC/Chatterbox. Chatterbox remains the quality/stability reference but has ~0.8s latency at the realtime config (`call_score_v1=0` under strict threshold). GPT-SoVITS and MNP-SVC rejected for French call-VC.
 - Next:
-  - Once `summary_ear_v2.json` is ready, update the model rankings/presets based on `call_score_v2` + `ear_score_v2`.
+  - Update rankings/presets using `summary_ear_v2.json` (call_score_v2 + ear_score_v2) for the key full playlist runs.
+  - Evaluate FasterSVC end-to-end (setup + user-pair + FLEURS fr_fr smoke/full) and compare to ClassicVC/FreeVC/Chatterbox.
   - Tune ClassicVC window/hop (and possibly gain/mask) to improve similarity/WER while keeping latency_p95_ms < 500ms; run smoke MAX_PAIRS=50 then full 300 for finalists.
   - Decide whether to adopt FreeVC gain/mask and rerun a full 300-pair evaluation for the best settings.
   - Add “worst cases” surfacing (case IDs/paths) for dropouts/glitches to speed subjective spot-checking.
