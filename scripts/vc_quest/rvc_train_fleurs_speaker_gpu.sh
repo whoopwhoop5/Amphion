@@ -26,7 +26,7 @@ FLEURS_LANG="${FLEURS_LANG:-fr_fr}"
 SPLIT="${SPLIT:-train}"
 SPEAKER_ID="${SPEAKER_ID:-1523}"
 
-OUT_DATA_DIR="${OUT_DATA_DIR:-runs/vc_quest/rvc/datasets/fleurs_${FLEURS_LANG}_${SPLIT}_s${SPEAKER_ID}}"
+OUT_DATA_DIR="${OUT_DATA_DIR:-}"
 MAX_FILES="${MAX_FILES:-500}"
 MIN_SEC="${MIN_SEC:-2.0}"
 MAX_SEC="${MAX_SEC:-12.0}"
@@ -85,10 +85,17 @@ echo "[rvc_train] pretrained_G=${PRETRAINED_G} pretrained_D=${PRETRAINED_D}"
 source "${CONDA_SH}"
 conda activate "${ENV_NAME}"
 
+OUT_DATA_DIR_WAS_DEFAULT=0
+if [[ -z "${OUT_DATA_DIR}" ]]; then
+  OUT_DATA_DIR_WAS_DEFAULT=1
+  OUT_DATA_DIR="runs/vc_quest/rvc/datasets/fleurs_${FLEURS_LANG}_${SPLIT}_s${SPEAKER_ID}"
+fi
+
 mkdir -p "${OUT_DATA_DIR}"
 
 if [[ ! -f "${OUT_DATA_DIR}/manifest.json" ]]; then
   echo "[rvc_train] Exporting FLEURS speaker dataset -> ${OUT_DATA_DIR}"
+  set +e
   python -m evaluation.vc_quest.playlists.export_fleurs_speaker_dataset \
     --lang "${FLEURS_LANG}" \
     --split "${SPLIT}" \
@@ -98,6 +105,27 @@ if [[ ! -f "${OUT_DATA_DIR}/manifest.json" ]]; then
     --max_files "${MAX_FILES}" \
     --seed "${SEED}" \
     --out_dir "${OUT_DATA_DIR}"
+  export_rc=$?
+  set -e
+  if [[ "${export_rc}" -ne 0 && "${SPLIT}" == "train" ]]; then
+    echo "[rvc_train] Speaker not found in ${FLEURS_LANG}/train; retrying export with split=dev"
+    SPLIT="dev"
+    if [[ "${OUT_DATA_DIR_WAS_DEFAULT}" -eq 1 ]]; then
+      OUT_DATA_DIR="runs/vc_quest/rvc/datasets/fleurs_${FLEURS_LANG}_${SPLIT}_s${SPEAKER_ID}"
+      mkdir -p "${OUT_DATA_DIR}"
+    fi
+    python -m evaluation.vc_quest.playlists.export_fleurs_speaker_dataset \
+      --lang "${FLEURS_LANG}" \
+      --split "${SPLIT}" \
+      --speaker_id "${SPEAKER_ID}" \
+      --min_sec "${MIN_SEC}" \
+      --max_sec "${MAX_SEC}" \
+      --max_files "${MAX_FILES}" \
+      --seed "${SEED}" \
+      --out_dir "${OUT_DATA_DIR}"
+  elif [[ "${export_rc}" -ne 0 ]]; then
+    exit "${export_rc}"
+  fi
 else
   echo "[rvc_train] Dataset exists: ${OUT_DATA_DIR}/manifest.json"
 fi
