@@ -37,6 +37,11 @@ cd "${GPTSOVITS_DIR}"
 # install.sh uses `tput` for UX; make it work under nohup/non-interactive shells.
 export TERM="${TERM:-xterm}"
 
+# Some minimal environments are missing terminfo entries; make install.sh robust to tput failures.
+if grep -q "tput cuu1 && tput el" install.sh 2>/dev/null; then
+  sed -i 's/tput cuu1 && tput el/(tput cuu1 && tput el) || true/' install.sh
+fi
+
 # Install deps + download pretrained models.
 bash install.sh --device "${DEVICE}" --source "${SOURCE}"
 
