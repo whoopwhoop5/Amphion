@@ -145,9 +145,16 @@
   - Evaluated FasterSVC as a call-VC candidate. Very fast, but not intelligible on the French playlist (WER≈1.02 on smoke) and low speaker similarity → reject. Artifacts: `runs/vc_quest/fastersvc/user_pair/*`, `runs/vc_quest/playlists/fleurs_fr_fr/fastersvc_w800_h400_end_a0p9_smoke50/summary.json`.
 - VC quest (2026-01-13):
   - ClassicVC tuning: larger window improves quality without increasing algorithmic delay for emit_align=end. New best ClassicVC full run (audio_ref): `runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w1600_h400_end_full/summary.json` => ear_score_v2≈0.336, call_score_v1≈0.263, WER≈0.704, S-SIM(target)≈0.904, latency_p95_ms≈229ms, dropouts>0.01: 2/300. Hop=200 full run regressed badly (WER≈0.842) despite lower latency.
+- VC quest (2026-01-13):
+  - Training-based RVC (per-target) evaluation completed on Vast:
+    - Trained on LibriTTS train.clean.100 speaker `6209` (~29.2 min, 80 epochs @ 40kHz, rmvpe).
+    - Mixed eval (FLEURS fr_fr sources + LibriTTS target ref, 30 pairs):
+      - RVC streaming: call_score_v1≈0.007, ear_score_v2≈0.007, WER≈1.109, S-SIM(target)≈0.699, silent_out_db_p95≈-15dB (very loud).
+      - ClassicVC baseline on same playlist: call_score_v1≈0.266, WER≈0.563, S-SIM(target)≈0.754.
+    - Conclusion: RVC is not competitive for French call-VC in our setup; bead `Amphion-ehh.28` closed.
 - Now: VC quest: ClassicVC/MMCXLI remains the best call-latency candidate on FLEURS fr_fr and improved further with w1600/h400 (better WER/ear_score at similar latency). FreeVC remains lower intelligibility + frequent dropouts; Chatterbox remains the quality/stability reference but is ~0.8s latency at realtime config (`call_score_v1=0` under strict threshold). GPT-SoVITS, MNP-SVC, and FasterSVC rejected for French call-VC.
 - Next:
-  - Start training-based low-latency VC evaluation now that per-voice training is allowed (RVC / so-vits-svc family; bead: `Amphion-ehh.28`).
+  - Continue scanning for new zero-shot call-VC competitors (e.g., Noro; see `docs/vc_quest.md` backlog).
   - Decide whether to adopt FreeVC gain/mask and rerun a full 300-pair evaluation for the best settings.
   - Add “worst cases” surfacing (case IDs/paths) for dropouts/glitches to speed subjective spot-checking.
   - Revisit Chatterbox call-latency only if we can reduce algorithmic delay or inference time without WER collapse; otherwise treat as hard-limited for call UX.

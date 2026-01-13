@@ -62,6 +62,13 @@ Latest results (Vast RTX 4090, WER_MODE=`audio_ref`, Whisper `base` language=`fr
 - **ChatterboxVC** (quality reference, masked, `runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_w800_h400_s8_mask_gain5_full/summary_ear_v2.json`)
   - ear_score_v2 mean≈0.641, WER mean≈0.607, S-SIM(target) mean≈0.957, dropouts 0/300
   - Not call-latency under `call_score_v1` (latency_p95_ms≈797ms => call_score_v1=0; call_score_v2 mean≈0.054)
+- **RVC (training-based)** (LibriTTS speaker `6209`, ~29.2 min training data, 80 epochs @ 40kHz; evaluated on mixed 30 pairs: FLEURS fr_fr sources + LibriTTS target ref)
+  - Streaming (`runs/vc_quest/playlists/fleurs_fr_fr/rvc_s6209_on_fleurs_w800_h400_end_full_v2/summary.json`):
+    - call_score_v1 mean≈0.007, ear_score_v2 mean≈0.007 (fails badly)
+    - latency_p95_ms mean≈295ms, rtf_p95 mean≈0.237 (speed/latency is fine)
+    - WER mean≈1.109, S-SIM(target) mean≈0.699, silence leakage is very loud (silent_out_db_p95 mean≈-15dB)
+  - Same mixed playlist baseline for comparison: ClassicVC is strong (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_on_fleurs_to_libritts_s6209_w1600_h400_end/summary.json`): call_score_v1 mean≈0.266, WER mean≈0.563, S-SIM(target) mean≈0.754
+  - Conclusion: RVC is **not competitive** for French call VC in our setup; likely reject unless we swap to a more multilingual content encoder and add stronger silence gating.
 
 ## Baseline (Vevo)
 - Model: Amphion Vevo `vevotimbre`
