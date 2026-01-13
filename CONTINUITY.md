@@ -137,13 +137,16 @@
 - VC quest (2026-01-12):
   - Strengthened auto-ears: added ASR confidence metrics + burstiness artifact signals (dropout/leak run-length), plus new composite scores `call_score_v2` (relaxed latency curve) and `ear_score_v2`; `select_best.py` supports `--score_key`. Commit: `24754e0`.
   - Vast rescoring queued to write `summary_ear_v2.json` for key full runs (ClassicVC/FreeVC/Chatterbox).
-- Now: VC quest: ClassicVC/MMCXLI is currently the best call-latency candidate on FLEURS fr_fr (lower latency + better WER than FreeVC), but speaker similarity is lower than FreeVC/Chatterbox. Chatterbox remains the quality/stability reference but has ~0.8s latency at the realtime config (`call_score_v1=0` under strict threshold). Vast is rescoring full runs with the new auto-ear metrics (`summary_ear_v2.json`).
+- VC quest (2026-01-13):
+  - Evaluated GPT-SoVITS as an ASR→TTS speech-to-speech “voice changer” (upstream VC tab is marked under construction). Setup is now robust under nohup and installs TorchCodec; wrapper fixes import shadowing (`models` collision). Results are not competitive for French (very high WER, non-aligned duration drift) → reject. Artifacts: `runs/vc_quest/gptsovits/user_pair/*`.
+- Now: VC quest: ClassicVC/MMCXLI is currently the best call-latency candidate on FLEURS fr_fr (lower latency + better WER than FreeVC), but speaker similarity is lower than FreeVC/Chatterbox. Chatterbox remains the quality/stability reference but has ~0.8s latency at the realtime config (`call_score_v1=0` under strict threshold). Vast is rescoring full runs with the new auto-ear metrics (`summary_ear_v2.json`). GPT-SoVITS rejected for French VC (ASR→TTS, not aligned).
 - Next:
   - Once `summary_ear_v2.json` is ready, update the model rankings/presets based on `call_score_v2` + `ear_score_v2`.
   - Tune ClassicVC window/hop (and possibly gain/mask) to improve similarity/WER while keeping latency_p95_ms < 500ms; run smoke MAX_PAIRS=50 then full 300 for finalists.
   - Decide whether to adopt FreeVC gain/mask and rerun a full 300-pair evaluation for the best settings.
   - Add “worst cases” surfacing (case IDs/paths) for dropouts/glitches to speed subjective spot-checking.
   - Revisit Chatterbox call-latency only if we can reduce algorithmic delay or inference time without WER collapse; otherwise treat as hard-limited for call UX.
+  - Now that per-voice training is allowed, evaluate a true low-latency training-based VC (e.g., so-vits-svc / RVC family) as a potential FreeVC replacement.
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
   - Whether to add optional VAD/gating to skip inference on silence (quality + compute).

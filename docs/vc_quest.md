@@ -502,6 +502,17 @@ Not actionable yet (paper/demo only or no public checkpoints):
   - `call_score_v1` clamped to 0.0.
 - Conclusion: not viable for live calls without major architectural/serving changes (iterative sampling dominates).
 
+### 21) GPT-SoVITS (ASR→TTS voice changer experiment)
+- Bead: `Amphion-ehh.24`
+- Status: evaluated (reject for French VC)
+- Important: GPT-SoVITS is primarily few-shot TTS. In the upstream WebUI, the “voice changer” tab is marked as **under construction**, so we benchmarked an **ASR→TTS** speech-to-speech pipeline (not time-aligned VC).
+- Implementation: `evaluation/vc_quest/gptsovits_tts_infer.py`, `evaluation/vc_quest/score_s2s.py`, `scripts/vc_quest/gptsovits_*`
+- Artifacts (Vast): `runs/vc_quest/gptsovits/user_pair/*`
+- Results (Vast RTX 4090, our French user pair):
+  - `v5_to_fr_s2s`: speaker_similarity_target≈0.872, WER≈0.884, duration_ratio≈1.82 (output much longer than input)
+  - `fr_to_v5_s2s`: speaker_similarity_target≈0.337, WER≈0.941, duration_ratio≈1.51
+- Conclusion: not viable for call-grade French VC. Outputs are **not time-aligned**, and content preservation collapses (very high WER) even though generation is fast (RTF≈0.23).
+
 ## What we record for each candidate
 - **Streaming config:** sample rate, chunk/window, hop, crossfade/OLA, VAD settings, any lookahead.
 - **Speed:** mean/p95 chunk processing time, estimated RTF on RTX 4090.
