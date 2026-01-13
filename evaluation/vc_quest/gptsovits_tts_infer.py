@@ -90,6 +90,13 @@ def main(argv: list[str] | None = None) -> int:
 
     # GPT-SoVITS expects to run with cwd at repo root due to relative paths.
     os.chdir(str(repo_dir))
+
+    # NOTE: We run this module from the Amphion repo. Amphion also has a top-level `models` package,
+    # which can shadow GPT-SoVITS bundled deps under `tools/AP_BWE_main/models`.
+    # Prepend AP_BWE_main to sys.path so `from models.model ...` resolves correctly.
+    ap_bwe_main_dir = repo_dir / "tools" / "AP_BWE_main"
+    if ap_bwe_main_dir.is_dir():
+        sys.path.insert(0, str(ap_bwe_main_dir))
     sys.path.insert(0, str(repo_dir))
     sys.path.insert(0, str(repo_dir / "GPT_SoVITS"))
 
@@ -169,4 +176,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
