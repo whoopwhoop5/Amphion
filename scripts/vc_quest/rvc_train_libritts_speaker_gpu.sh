@@ -1,0 +1,333 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Trains an RVC (Retrieval-based Voice Conversion) model for a single LibriTTS speaker on a GPU host.
+#
+# Prereqs (Vast):
+#   bash scripts/vc_quest/rvc_setup_gpu.sh
+#
+# Notes:
+# - Exports a per-speaker wav dataset from mythicinfinity/libritts (HF parquet).
+# - Then runs the minimal RVC training pipeline: preprocess -> feature -> f0 -> filelist+config -> train -> faiss index.
+
+MINIFORGE_ROOT="/opt/miniforge3"
+CONDA_SH="${MINIFORGE_ROOT}/etc/profile.d/conda.sh"
+ENV_NAME="rvc"
+
+cd "$(dirname "$0")/../.."
+
+RVC_DIR="${RVC_DIR:-${HOME}/deps/rvc_webui}"
+if [[ ! -d "${RVC_DIR}" ]]; then
+  echo "[rvc_train_libritts] Missing RVC repo at ${RVC_DIR}. Run: bash scripts/vc_quest/rvc_setup_gpu.sh" >&2
+  exit 1
+fi
+
+REPO_ID="${REPO_ID:-mythicinfinity/libritts}"
+SPLIT="${SPLIT:-train.clean.100}"
+SPEAKER_ID="${SPEAKER_ID:-}" # empty => auto-pick
+AUTO_MIN_UTTERANCES="${AUTO_MIN_UTTERANCES:-80}"
+
+OUT_DATA_DIR="${OUT_DATA_DIR:-}"
+MAX_FILES="${MAX_FILES:-500}"
+MAX_MINUTES="${MAX_MINUTES:-20.0}"
+MIN_SEC="${MIN_SEC:-2.0}"
+MAX_SEC="${MAX_SEC:-12.0}"
+TARGET_SR="${TARGET_SR:-24000}"
+SEED="${SEED:-1234}"
+
+RVC_SR="${RVC_SR:-40k}" # 32k/40k/48k
+RVC_VERSION="${RVC_VERSION:-v1}" # v1/v2
+IF_F0="${IF_F0:-1}" # 1/0
+F0METHOD="${F0METHOD:-rmvpe}" # rmvpe/harvest/pm/dio/crepe
+
+NP="${NP:-8}"
+GPUS="${GPUS:-0}"
+
+SAVE_EVERY_EPOCH="${SAVE_EVERY_EPOCH:-10}"
+TOTAL_EPOCH="${TOTAL_EPOCH:-50}"
+BATCH_SIZE="${BATCH_SIZE:-8}"
+
+IF_LATEST="${IF_LATEST:-1}"
+CACHE_GPU="${CACHE_GPU:-0}"
+SAVE_EVERY_WEIGHTS="${SAVE_EVERY_WEIGHTS:-1}"
+
+SR_HZ=40000
+case "${RVC_SR}" in
+  32k) SR_HZ=32000 ;;
+  40k) SR_HZ=40000 ;;
+  48k) SR_HZ=48000 ;;
+  *)
+    echo "[rvc_train_libritts] Unsupported RVC_SR=${RVC_SR} (expected 32k/40k/48k)" >&2
+    exit 1
+    ;;
+esac
+
+CONFIG_VERSION="${RVC_VERSION}"
+if [[ "${RVC_SR}" == "40k" ]]; then
+  CONFIG_VERSION="v1" # RVC upstream uses v1 config for 40k
+fi
+
+PRETRAINED_G="${PRETRAINED_G:-}"
+PRETRAINED_D="${PRETRAINED_D:-}"
+if [[ -z "${PRETRAINED_G}" || -z "${PRETRAINED_D}" ]]; then
+  if [[ "${IF_F0}" == "1" ]]; then
+    PRETRAINED_G="${PRETRAINED_G:-assets/pretrained/f0G${RVC_SR}.pth}"
+    PRETRAINED_D="${PRETRAINED_D:-assets/pretrained/f0D${RVC_SR}.pth}"
+  else
+    PRETRAINED_G="${PRETRAINED_G:-assets/pretrained/G${RVC_SR}.pth}"
+    PRETRAINED_D="${PRETRAINED_D:-assets/pretrained/D${RVC_SR}.pth}"
+  fi
+fi
+
+echo "[rvc_train_libritts] split=${SPLIT} speaker=${SPEAKER_ID:-auto} max_files=${MAX_FILES} max_minutes=${MAX_MINUTES} seed=${SEED}"
+echo "[rvc_train_libritts] exp sr=${RVC_SR} hz=${SR_HZ} ver=${RVC_VERSION} if_f0=${IF_F0} f0=${F0METHOD}"
+echo "[rvc_train_libritts] epochs=${TOTAL_EPOCH} save_every=${SAVE_EVERY_EPOCH} bs=${BATCH_SIZE} gpus=${GPUS} np=${NP}"
+
+source "${CONDA_SH}"
+conda activate "${ENV_NAME}"
+
+# Ensure exporter deps exist in the RVC env (HF + pyarrow for parquet).
+python -c "import huggingface_hub, pyarrow.parquet, soundfile" >/dev/null 2>&1 || \
+  python -m pip install -U huggingface_hub pyarrow soundfile
+python -c "import huggingface_hub, pyarrow.parquet, soundfile" >/dev/null 2>&1
+
+OUT_DATA_DIR_WAS_DEFAULT=0
+if [[ -z "${OUT_DATA_DIR}" ]]; then
+  OUT_DATA_DIR_WAS_DEFAULT=1
+  OUT_DATA_DIR="runs/vc_quest/rvc/datasets/libritts_${SPLIT}_seed${SEED}"
+fi
+mkdir -p "${OUT_DATA_DIR}"
+
+if [[ ! -f "${OUT_DATA_DIR}/manifest.json" ]]; then
+  echo "[rvc_train_libritts] Exporting LibriTTS speaker dataset -> ${OUT_DATA_DIR}"
+  python -m evaluation.vc_quest.playlists.export_libritts_speaker_dataset \
+    --repo_id "${REPO_ID}" \
+    --split "${SPLIT}" \
+    --revision "${LIBRITTS_REVISION:-}" \
+    ${SPEAKER_ID:+--speaker_id "${SPEAKER_ID}"} \
+    --auto_min_utterances "${AUTO_MIN_UTTERANCES}" \
+    --min_sec "${MIN_SEC}" \
+    --max_sec "${MAX_SEC}" \
+    --max_files "${MAX_FILES}" \
+    --max_minutes "${MAX_MINUTES}" \
+    --target_sr "${TARGET_SR}" \
+    --seed "${SEED}" \
+    --out_dir "${OUT_DATA_DIR}"
+else
+  echo "[rvc_train_libritts] Dataset exists: ${OUT_DATA_DIR}/manifest.json"
+fi
+
+SPEAKER_ID_FROM_MANIFEST="$(python - <<PY
+import json
+from pathlib import Path
+m = json.loads(Path("${OUT_DATA_DIR}/manifest.json").read_text(encoding="utf-8"))
+print(str((m.get("meta") or {}).get("speaker_id") or "").strip())
+PY
+)"
+if [[ -z "${SPEAKER_ID_FROM_MANIFEST}" ]]; then
+  echo "[rvc_train_libritts] Failed to read speaker_id from ${OUT_DATA_DIR}/manifest.json" >&2
+  exit 1
+fi
+SPEAKER_ID="${SPEAKER_ID_FROM_MANIFEST}"
+
+EXP_NAME="${EXP_NAME:-rvc_libritts_${SPLIT}_s${SPEAKER_ID}_v1_40k_f0_rmvpe}"
+
+# Use an absolute path for the dataset dir (RVC scripts run with cwd at the RVC repo).
+OUT_DATA_DIR="$(cd "${OUT_DATA_DIR}" && pwd)"
+
+cd "${RVC_DIR}"
+
+EXP_DIR="logs/${EXP_NAME}"
+mkdir -p "${EXP_DIR}"
+
+if [[ ! -f "${EXP_DIR}/config.json" ]]; then
+  CONFIG_SRC="configs/${CONFIG_VERSION}/${RVC_SR}.json"
+  if [[ ! -f "${CONFIG_SRC}" ]]; then
+    echo "[rvc_train_libritts] Missing config template: ${RVC_DIR}/${CONFIG_SRC}" >&2
+    exit 1
+  fi
+  cp "${CONFIG_SRC}" "${EXP_DIR}/config.json"
+fi
+
+FEATURE_DIR="${EXP_DIR}/3_feature256"
+if [[ "${RVC_VERSION}" != "v1" ]]; then
+  FEATURE_DIR="${EXP_DIR}/3_feature768"
+fi
+
+NEED_PREP=0
+if [[ "${FORCE_PREP:-0}" == "1" ]]; then
+  NEED_PREP=1
+fi
+if [[ ! -d "${EXP_DIR}/0_gt_wavs" ]]; then
+  NEED_PREP=1
+fi
+if [[ ! -d "${FEATURE_DIR}" ]]; then
+  NEED_PREP=1
+fi
+if [[ "${NEED_PREP}" -eq 0 ]]; then
+  if [[ -z "$(ls -1 "${FEATURE_DIR}"/*.npy 2>/dev/null | head -n 1)" ]]; then
+    NEED_PREP=1
+  fi
+fi
+
+if [[ "${NEED_PREP}" -eq 1 ]]; then
+  echo "[rvc_train_libritts] Preprocess (sr=${SR_HZ})"
+  python infer/modules/train/preprocess.py \
+    "${OUT_DATA_DIR}/wavs" \
+    "${SR_HZ}" \
+    "${NP}" \
+    "${EXP_DIR}" \
+    "False" \
+    "3.7"
+
+  echo "[rvc_train_libritts] Extract features (HuBERT)"
+  python infer/modules/train/extract_feature_print.py \
+    cuda \
+    1 \
+    0 \
+    0 \
+    "${EXP_DIR}" \
+    "${RVC_VERSION}" \
+    "True"
+
+  if [[ "${IF_F0}" == "1" ]]; then
+    if [[ "${F0METHOD}" == "rmvpe" ]]; then
+      echo "[rvc_train_libritts] Extract f0 (RMVPE, GPU)"
+      python infer/modules/train/extract/extract_f0_rmvpe.py \
+        1 \
+        0 \
+        0 \
+        "${EXP_DIR}" \
+        "True"
+    else
+      echo "[rvc_train_libritts] Extract f0 (${F0METHOD}, CPU)"
+      python infer/modules/train/extract/extract_f0_print.py \
+        "${EXP_DIR}" \
+        "${NP}" \
+        "${F0METHOD}"
+    fi
+  fi
+
+  echo "[rvc_train_libritts] Write filelist.txt"
+  EXP_DIR="${EXP_DIR}" RVC_VERSION="${RVC_VERSION}" RVC_SR="${RVC_SR}" IF_F0="${IF_F0}" python - <<'PY'
+import os
+from pathlib import Path
+
+exp_dir = Path(os.environ["EXP_DIR"])
+version = os.environ["RVC_VERSION"]
+sr = os.environ["RVC_SR"]
+if_f0 = os.environ["IF_F0"] == "1"
+
+gt_wavs_dir = exp_dir / "0_gt_wavs"
+feature_dir = exp_dir / ("3_feature256" if version == "v1" else "3_feature768")
+f0_dir = exp_dir / "2a_f0"
+f0nsf_dir = exp_dir / "2b-f0nsf"
+
+if not gt_wavs_dir.is_dir():
+    raise SystemExit(f"missing: {gt_wavs_dir}")
+if not feature_dir.is_dir():
+    raise SystemExit(f"missing: {feature_dir}")
+if if_f0 and (not f0_dir.is_dir() or not f0nsf_dir.is_dir()):
+    raise SystemExit(f"missing f0 dirs under: {exp_dir}")
+
+spk_id = "0"
+lines = []
+for wav_path in sorted(gt_wavs_dir.glob("*.wav")):
+    name = wav_path.stem
+    feat_path = feature_dir / f"{name}.npy"
+    if not feat_path.exists():
+        continue
+    if if_f0:
+        f0_path = f0_dir / f"{name}.wav.npy"
+        f0nsf_path = f0nsf_dir / f"{name}.wav.npy"
+        if not f0_path.exists() or not f0nsf_path.exists():
+            continue
+        lines.append(f"{wav_path}|{feat_path}|{f0_path}|{f0nsf_path}|{spk_id}")
+    else:
+        lines.append(f"{wav_path}|{feat_path}|{spk_id}")
+
+mute_dir = Path("logs/mute").resolve()
+mute_wav = mute_dir / "0_gt_wavs" / f"mute{sr}.wav"
+mute_feat = mute_dir / ("3_feature256" if version == "v1" else "3_feature768") / "mute.npy"
+if if_f0:
+    mute_f0 = mute_dir / "2a_f0" / "mute.wav.npy"
+    mute_f0nsf = mute_dir / "2b-f0nsf" / "mute.wav.npy"
+    mute_line = f"{mute_wav}|{mute_feat}|{mute_f0}|{mute_f0nsf}|{spk_id}"
+else:
+    mute_line = f"{mute_wav}|{mute_feat}|{spk_id}"
+lines.extend([mute_line, mute_line])
+
+out = exp_dir / "filelist.txt"
+out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+print(f"[rvc_train_libritts] filelist: {out} ({len(lines)} lines)")
+PY
+else
+  echo "[rvc_train_libritts] Reusing existing preprocessed features under ${EXP_DIR}"
+fi
+
+echo "[rvc_train_libritts] Train (this can take a while)"
+set +e
+python infer/modules/train/train.py \
+  -e "${EXP_NAME}" \
+  -sr "${RVC_SR}" \
+  -f0 "${IF_F0}" \
+  -bs "${BATCH_SIZE}" \
+  -g "${GPUS}" \
+  -te "${TOTAL_EPOCH}" \
+  -se "${SAVE_EVERY_EPOCH}" \
+  -pg "${PRETRAINED_G}" \
+  -pd "${PRETRAINED_D}" \
+  -l "${IF_LATEST}" \
+  -c "${CACHE_GPU}" \
+  -sw "${SAVE_EVERY_WEIGHTS}" \
+  -v "${RVC_VERSION}"
+train_rc=$?
+set -e
+
+# RVC's train.py terminates with os._exit(2333333) when it reaches total_epoch.
+if [[ "${train_rc}" -ne 0 && "${train_rc}" -ne 149 ]]; then
+  echo "[rvc_train_libritts] train.py failed (rc=${train_rc})" >&2
+  exit "${train_rc}"
+fi
+
+echo "[rvc_train_libritts] Train faiss index"
+EXP_NAME="${EXP_NAME}" RVC_VERSION="${RVC_VERSION}" python - <<'PY'
+import os
+from pathlib import Path
+
+import faiss
+import numpy as np
+
+exp_name = os.environ["EXP_NAME"]
+version = os.environ["RVC_VERSION"]
+exp_dir = Path("logs") / exp_name
+feature_dir = exp_dir / ("3_feature256" if version == "v1" else "3_feature768")
+
+npys = []
+for p in sorted(feature_dir.glob("*.npy")):
+    npys.append(np.load(p))
+big_npy = np.concatenate(npys, axis=0)
+np.random.shuffle(big_npy)
+
+dim = 256 if version == "v1" else 768
+n_ivf = min(int(16 * np.sqrt(big_npy.shape[0])), max(1, big_npy.shape[0] // 39))
+
+index = faiss.index_factory(dim, f"IVF{n_ivf},Flat")
+index_ivf = faiss.extract_index_ivf(index)
+index_ivf.nprobe = 1
+index.train(big_npy)
+
+trained_path = exp_dir / f"trained_IVF{n_ivf}_Flat_nprobe_{index_ivf.nprobe}_{exp_name}_{version}.index"
+added_path = exp_dir / f"added_IVF{n_ivf}_Flat_nprobe_{index_ivf.nprobe}_{exp_name}_{version}.index"
+faiss.write_index(index, str(trained_path))
+
+batch = 8192
+for i in range(0, big_npy.shape[0], batch):
+    index.add(big_npy[i : i + batch])
+faiss.write_index(index, str(added_path))
+
+print(f"[rvc_train_libritts] index: {added_path} (dim={dim}, n_ivf={n_ivf}, frames={big_npy.shape[0]})")
+PY
+
+echo "[rvc_train_libritts] Done. Weights should be under: ${RVC_DIR}/assets/weights/${EXP_NAME}.pth"
+echo "[rvc_train_libritts] Index should be under: ${RVC_DIR}/logs/${EXP_NAME}/added_*.index"

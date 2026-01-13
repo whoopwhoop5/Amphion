@@ -66,3 +66,6 @@ conversion_results
 get_available_gpu.py
 
 *.safetensors
+
+# Node/V8 heap snapshots (profiling artifacts)
+*.heapsnapshot
