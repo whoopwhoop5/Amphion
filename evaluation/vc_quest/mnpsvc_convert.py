@@ -267,6 +267,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--peak_limit", type=float, default=0.99)
     args = parser.parse_args(argv)
 
+    ref_path = os.path.abspath(str(args.ref))
+    src_path = os.path.abspath(str(args.src))
+    out_path = os.path.abspath(str(args.out))
+    meta_json_path = os.path.abspath(str(args.meta_json)) if str(args.meta_json).strip() else ""
+
     device = (
         torch.device(args.device)
         if args.device
@@ -284,6 +289,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not os.path.isfile(model_path):
         raise FileNotFoundError(f"model_path not found: {model_path}")
 
+    os.chdir(mnpsvc_dir)
     _prefer_mnpsvc_modules(mnpsvc_dir)
     from modules.extractors import F0Extractor, SpeakerEmbedEncoder, UnitsEncoder, VolumeExtractor  # type: ignore[import-not-found]
     from modules.extractors.common import upsample  # type: ignore[import-not-found]
@@ -323,8 +329,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         device=str(device),
     )
 
-    ref_wav, ref_sr = _load_mono(args.ref)
-    src_wav, src_sr = _load_mono(args.src)
+    ref_wav, ref_sr = _load_mono(ref_path)
+    src_wav, src_sr = _load_mono(src_path)
     ref_rs = _resample_if_needed(ref_wav, ref_sr, model_sr)
     src_rs = _resample_if_needed(src_wav, src_sr, model_sr)
     ref_rs = _trim_to_max_sec(ref_rs, sample_rate=model_sr, max_sec=float(args.ref_max_sec))
@@ -358,7 +364,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
         timings.append(time.time() - t0)
         out = normalize_length(out, len(src_rs), align="start")
-        sf.write(str(args.out), out, model_sr)
+        sf.write(out_path, out, model_sr)
     else:
         in_sr = model_sr
         out_sr = model_sr
@@ -512,7 +518,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             window_count += 1
 
         out = np.concatenate(outs) if outs else np.zeros(0, dtype=np.float32)
-        sf.write(str(args.out), out, out_sr)
+        sf.write(out_path, out, out_sr)
 
         if bool(args.drop_warmup_hops):
             delay_samples = int(
@@ -521,8 +527,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         else:
             delay_samples = int(emit_start_out)
 
-    if args.meta_json:
-        meta_p = Path(args.meta_json)
+    if meta_json_path:
+        meta_p = Path(meta_json_path)
         meta_p.parent.mkdir(parents=True, exist_ok=True)
 
         stream_cfg = (
@@ -578,7 +584,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         }
         meta_p.write_text(json.dumps({"config": asdict(cfg_out), "stats": stats}, indent=2), encoding="utf-8")
 
-    print(f"Wrote: {args.out}", flush=True)
+    print(f"Wrote: {out_path}", flush=True)
     return 0
 
 

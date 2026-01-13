@@ -212,6 +212,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    manifest_path = os.path.abspath(str(args.manifest))
+    out_dir = os.path.abspath(str(args.out_dir))
+
     device = (
         torch.device(args.device)
         if args.device
@@ -229,6 +232,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not os.path.isfile(model_path):
         raise FileNotFoundError(f"model_path not found: {model_path}")
 
+    os.chdir(mnpsvc_dir)
     _prefer_mnpsvc_modules(mnpsvc_dir)
     from modules.extractors import F0Extractor, SpeakerEmbedEncoder, UnitsEncoder, VolumeExtractor  # type: ignore[import-not-found]
     from modules.extractors.common import upsample  # type: ignore[import-not-found]
@@ -268,14 +272,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         device=str(device),
     )
 
-    manifest = load_vc_playlist_manifest(args.manifest).resolve_paths(args.manifest)
+    manifest = load_vc_playlist_manifest(manifest_path).resolve_paths(manifest_path)
     sources = manifest.sources_by_id()
     targets = manifest.targets_by_id()
     pairs = list(manifest.pairs)
     if int(args.max_pairs) > 0:
         pairs = pairs[: int(args.max_pairs)]
 
-    out_root = Path(args.out_dir)
+    out_root = Path(out_dir)
     wav_dir = out_root / "wavs"
     meta_dir = out_root / "meta"
     wav_dir.mkdir(parents=True, exist_ok=True)
