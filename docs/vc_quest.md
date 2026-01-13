@@ -529,6 +529,19 @@ Not actionable yet (paper/demo only or no public checkpoints):
   - WER mean≈0.976, S-SIM(target) mean≈0.834, dropouts 0/50
 - Conclusion: fast and stable, but **speaker similarity is noticeably worse** than our top call-UX candidate (ClassicVC) and content is not competitive. Not promoted to a full 300-pair run.
 
+### 23) FasterSVC (uthree/fastersvc)
+- Bead: `Amphion-ehh.25`
+- Status: evaluated (reject)
+- Implementation: `evaluation/vc_quest/fastersvc_convert.py`, `evaluation/vc_quest/fastersvc_playlist_convert.py`, `scripts/vc_quest/fastersvc_*`
+- Artifacts (Vast):
+  - User-pair: `runs/vc_quest/fastersvc/user_pair/*`
+  - Playlist smoke (50): `runs/vc_quest/playlists/fleurs_fr_fr/fastersvc_w800_h400_end_a0p9_smoke50/summary.json`
+- Results (Vast RTX 4090, FLEURS fr_fr, smoke `w800/h400`, `emit_align=end`, `alpha=0.9`, WER_MODE=`audio_ref`, 50 pairs):
+  - call_score_v1 mean≈0.0019, ear_score_v2 mean≈0.0012
+  - latency_p95_ms mean≈250, rtf_p95 mean≈0.124
+  - WER mean≈1.021, S-SIM(target) mean≈0.694, dropout mean≈0.027
+- Conclusion: despite strong speed, FasterSVC outputs are not ASR-intelligible on our French benchmark and speaker similarity is low → reject.
+
 ## What we record for each candidate
 - **Streaming config:** sample rate, chunk/window, hop, crossfade/OLA, VAD settings, any lookahead.
 - **Speed:** mean/p95 chunk processing time, estimated RTF on RTX 4090.
