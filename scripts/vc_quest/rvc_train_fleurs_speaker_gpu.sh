@@ -147,7 +147,29 @@ if [[ ! -f "${EXP_DIR}/config.json" ]]; then
   cp "${CONFIG_SRC}" "${EXP_DIR}/config.json"
 fi
 
-if [[ ! -f "${EXP_DIR}/filelist.txt" ]]; then
+FEATURE_DIR="${EXP_DIR}/3_feature256"
+if [[ "${RVC_VERSION}" != "v1" ]]; then
+  FEATURE_DIR="${EXP_DIR}/3_feature768"
+fi
+
+NEED_PREP=0
+if [[ "${FORCE_PREP:-0}" == "1" ]]; then
+  NEED_PREP=1
+fi
+if [[ ! -d "${EXP_DIR}/0_gt_wavs" ]]; then
+  NEED_PREP=1
+fi
+if [[ ! -d "${FEATURE_DIR}" ]]; then
+  NEED_PREP=1
+fi
+if [[ "${NEED_PREP}" -eq 0 ]]; then
+  # Also require at least one feature file.
+  if [[ -z "$(ls -1 "${FEATURE_DIR}"/*.npy 2>/dev/null | head -n 1)" ]]; then
+    NEED_PREP=1
+  fi
+fi
+
+if [[ "${NEED_PREP}" -eq 1 ]]; then
   echo "[rvc_train] Preprocess (sr=${SR_HZ})"
   python infer/modules/train/preprocess.py \
     "${OUT_DATA_DIR}/wavs" \
@@ -236,10 +258,10 @@ lines.extend([mute_line, mute_line])
 
 out = exp_dir / "filelist.txt"
 out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-print(f"[rvc_train] filelist: {out} ({len(lines)} lines)")
+  print(f"[rvc_train] filelist: {out} ({len(lines)} lines)")
 PY
 else
-  echo "[rvc_train] filelist exists: ${EXP_DIR}/filelist.txt"
+  echo "[rvc_train] Reusing existing preprocessed features under ${EXP_DIR}"
 fi
 
 echo "[rvc_train] Train (this can take a while)"
