@@ -45,6 +45,9 @@ fi
 # Install deps + download pretrained models.
 bash install.sh --device "${DEVICE}" --source "${SOURCE}"
 
+# torchaudio 2.9 uses TorchCodec for loading audio; install.sh doesn't always install it.
+python -m pip install --upgrade --quiet torchcodec
+
 if ! command -v ffmpeg >/dev/null 2>&1; then
   conda install -y ffmpeg
 fi
