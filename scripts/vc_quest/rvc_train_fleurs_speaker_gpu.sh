@@ -130,6 +130,9 @@ else
   echo "[rvc_train] Dataset exists: ${OUT_DATA_DIR}/manifest.json"
 fi
 
+# Use an absolute path for the dataset dir (RVC scripts run with cwd at the RVC repo).
+OUT_DATA_DIR="$(cd "${OUT_DATA_DIR}" && pwd)"
+
 cd "${RVC_DIR}"
 
 EXP_DIR="logs/${EXP_NAME}"
