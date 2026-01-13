@@ -33,7 +33,7 @@ STREAM_HOP_MS="${STREAM_HOP_MS:-400}"
 STREAM_FADE_MS="${STREAM_FADE_MS:-10}"
 STREAM_EMIT_ALIGN="${STREAM_EMIT_ALIGN:-end}"
 
-VAD_MODE="${VAD_MODE:-webrtc}"
+VAD_MODE="${VAD_MODE:-rms}"
 VAD_DB="${VAD_DB:--55}"
 VAD_FRAME_MS="${VAD_FRAME_MS:-10}"
 VAD_HANGOVER_MS="${VAD_HANGOVER_MS:-200}"
@@ -186,4 +186,3 @@ python -m evaluation.vc_quest.score_outputs \
   --out_json "${RUN_DIR}/fr_to_v5_stream.report.json"
 
 echo "[fastersvc_run] Wrote artifacts to ${RUN_DIR}"
-

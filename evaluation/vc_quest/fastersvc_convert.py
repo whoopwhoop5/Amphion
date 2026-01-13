@@ -173,7 +173,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Drop output until the first full window is available (recommended for eval).",
     )
 
-    parser.add_argument("--vad_mode", type=str, default="webrtc", choices=["rms", "webrtc", "off"])
+    parser.add_argument("--vad_mode", type=str, default="rms", choices=["rms", "webrtc", "off"])
     parser.add_argument("--vad_db", type=float, default=-55.0)
     parser.add_argument("--vad_frame_ms", type=float, default=10.0)
     parser.add_argument("--vad_hangover_ms", type=float, default=200.0)
@@ -339,9 +339,15 @@ def main(argv: Optional[list[str]] = None) -> int:
             elif vad_mode == "rms":
                 voiced = not silent_rms
             elif vad_mode == "webrtc":
+                webrtc_sr = in_sr if in_sr in (8000, 16000, 32000, 48000) else 16000
+                webrtc_segment = (
+                    vad_segment
+                    if webrtc_sr == in_sr
+                    else _resample_if_needed(vad_segment, src_sr=in_sr, dst_sr=webrtc_sr)
+                )
                 webrtc_voiced = is_voiced_webrtcvad(
-                    vad_segment,
-                    sample_rate=in_sr,
+                    webrtc_segment,
+                    sample_rate=webrtc_sr,
                     frame_ms=int(args.vad_webrtc_frame_ms),  # type: ignore[arg-type]
                     aggressiveness=int(args.vad_webrtc_aggressiveness),
                     min_voiced_ratio=float(args.vad_webrtc_min_voiced_ratio),
@@ -477,4 +483,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
