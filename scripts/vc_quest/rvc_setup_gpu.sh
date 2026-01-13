@@ -59,6 +59,17 @@ conda activate "${ENV_NAME}"
 
 python -m pip install -U pip setuptools wheel
 
+# Some RVC deps build C/C++ extensions and expect Python headers to be discoverable via
+# standard include paths (e.g., <Python.h>). Make the conda Python include dir visible.
+PY_INCLUDE_DIR="$(python - <<'PY'
+import sysconfig
+print(sysconfig.get_paths()["include"])
+PY
+)"
+export CPATH="${PY_INCLUDE_DIR}${CPATH:+:${CPATH}}"
+export C_INCLUDE_PATH="${PY_INCLUDE_DIR}${C_INCLUDE_PATH:+:${C_INCLUDE_PATH}}"
+export CPLUS_INCLUDE_PATH="${PY_INCLUDE_DIR}${CPLUS_INCLUDE_PATH:+:${CPLUS_INCLUDE_PATH}}"
+
 # CUDA torch (override with TORCH_INDEX_URL if needed).
 TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu121}"
 python -m pip install -U --index-url "${TORCH_INDEX_URL}" \
@@ -67,6 +78,7 @@ python -m pip install -U --index-url "${TORCH_INDEX_URL}" \
   torchvision==0.18.1+cu121
 
 echo "[rvc_setup] Installing python deps (requirements-py311.txt)"
+python -m pip install -U ninja
 python -m pip install -U -r "${RVC_DIR}/requirements-py311.txt"
 
 echo "[rvc_setup] Downloading RVC base models (hubert/rmvpe/pretrained)"
