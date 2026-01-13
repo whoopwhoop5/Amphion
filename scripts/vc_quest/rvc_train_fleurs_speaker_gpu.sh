@@ -22,17 +22,17 @@ if [[ ! -d "${RVC_DIR}" ]]; then
   exit 1
 fi
 
-LANG="${LANG:-fr_fr}"
+FLEURS_LANG="${FLEURS_LANG:-fr_fr}"
 SPLIT="${SPLIT:-train}"
 SPEAKER_ID="${SPEAKER_ID:-1523}"
 
-OUT_DATA_DIR="${OUT_DATA_DIR:-runs/vc_quest/rvc/datasets/fleurs_${LANG}_${SPLIT}_s${SPEAKER_ID}}"
+OUT_DATA_DIR="${OUT_DATA_DIR:-runs/vc_quest/rvc/datasets/fleurs_${FLEURS_LANG}_${SPLIT}_s${SPEAKER_ID}}"
 MAX_FILES="${MAX_FILES:-500}"
 MIN_SEC="${MIN_SEC:-2.0}"
 MAX_SEC="${MAX_SEC:-12.0}"
 SEED="${SEED:-1234}"
 
-EXP_NAME="${EXP_NAME:-rvc_${LANG}_s${SPEAKER_ID}_v1_40k_f0_rmvpe}"
+EXP_NAME="${EXP_NAME:-rvc_${FLEURS_LANG}_s${SPEAKER_ID}_v1_40k_f0_rmvpe}"
 RVC_SR="${RVC_SR:-40k}" # 32k/40k/48k
 RVC_VERSION="${RVC_VERSION:-v1}" # v1/v2
 IF_F0="${IF_F0:-1}" # 1/0
@@ -77,7 +77,7 @@ if [[ -z "${PRETRAINED_G}" || -z "${PRETRAINED_D}" ]]; then
   fi
 fi
 
-echo "[rvc_train] speaker=${SPEAKER_ID} lang=${LANG} split=${SPLIT} max_files=${MAX_FILES} seed=${SEED}"
+echo "[rvc_train] speaker=${SPEAKER_ID} lang=${FLEURS_LANG} split=${SPLIT} max_files=${MAX_FILES} seed=${SEED}"
 echo "[rvc_train] exp=${EXP_NAME} sr=${RVC_SR} hz=${SR_HZ} ver=${RVC_VERSION} if_f0=${IF_F0} f0=${F0METHOD}"
 echo "[rvc_train] epochs=${TOTAL_EPOCH} save_every=${SAVE_EVERY_EPOCH} bs=${BATCH_SIZE} gpus=${GPUS} np=${NP}"
 echo "[rvc_train] pretrained_G=${PRETRAINED_G} pretrained_D=${PRETRAINED_D}"
@@ -90,7 +90,7 @@ mkdir -p "${OUT_DATA_DIR}"
 if [[ ! -f "${OUT_DATA_DIR}/manifest.json" ]]; then
   echo "[rvc_train] Exporting FLEURS speaker dataset -> ${OUT_DATA_DIR}"
   python -m evaluation.vc_quest.playlists.export_fleurs_speaker_dataset \
-    --lang "${LANG}" \
+    --lang "${FLEURS_LANG}" \
     --split "${SPLIT}" \
     --speaker_id "${SPEAKER_ID}" \
     --min_sec "${MIN_SEC}" \
