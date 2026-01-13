@@ -258,7 +258,7 @@ lines.extend([mute_line, mute_line])
 
 out = exp_dir / "filelist.txt"
 out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-  print(f"[rvc_train] filelist: {out} ({len(lines)} lines)")
+print(f"[rvc_train] filelist: {out} ({len(lines)} lines)")
 PY
 else
   echo "[rvc_train] Reusing existing preprocessed features under ${EXP_DIR}"
