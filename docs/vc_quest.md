@@ -49,17 +49,19 @@ python -m evaluation.vc_quest.score_playlist \
 ```
 
 Latest results (Vast RTX 4090, WER_MODE=`audio_ref`, Whisper `base` language=`fr`, 300 pairs):
-- **ClassicVC/MMCXLI** (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w1200_h400_end_full/summary.json`)
-  - call_score_v1 mean≈0.234, latency_p95_ms mean≈224, rtf_p95 mean≈0.060
-  - WER mean≈0.748, S-SIM(target) mean≈0.903
+- **ClassicVC/MMCXLI** (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w1200_h400_end_full/summary_ear_v2.json`)
+  - call_score_v1 mean≈0.237, call_score_v2 mean≈0.270, ear_score_v2 mean≈0.295
+  - latency_p95_ms mean≈224, rtf_p95 mean≈0.060
+  - WER mean≈0.732, S-SIM(target) mean≈0.903
   - Stable: dropouts (`dropout>0.01`): 3/300, silence/clip gates 0/300
-- **FreeVC** (call-latency preset, `runs/vc_quest/playlists/fleurs_fr_fr/freevc_w800_h400_end_full/summary_audio_ref.json`)
-  - call_score_v1 mean≈0.122, latency_p95_ms mean≈272, rtf_p95 mean≈0.179
-  - WER mean≈0.934, S-SIM(target) mean≈0.931
+- **FreeVC** (call-latency preset, `runs/vc_quest/playlists/fleurs_fr_fr/freevc_w800_h400_end_full/summary_ear_v2.json`)
+  - call_score_v1 mean≈0.122, call_score_v2 mean≈0.121, ear_score_v2 mean≈0.142
+  - latency_p95_ms mean≈272, rtf_p95 mean≈0.179
+  - WER mean≈0.935, S-SIM(target) mean≈0.931
   - Main issue: dropouts (`dropout>0.01`): 30/300
-- **ChatterboxVC** (quality reference, masked, `runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_w800_h400_s8_mask_gain5_full/summary_audio_ref.json`)
-  - WER mean≈0.617, S-SIM(target) mean≈0.957, dropouts 0/300
-  - Not call-latency under `call_score_v1` (latency_p95_ms≈797ms => call_score_v1=0)
+- **ChatterboxVC** (quality reference, masked, `runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_w800_h400_s8_mask_gain5_full/summary_ear_v2.json`)
+  - ear_score_v2 mean≈0.641, WER mean≈0.607, S-SIM(target) mean≈0.957, dropouts 0/300
+  - Not call-latency under `call_score_v1` (latency_p95_ms≈797ms => call_score_v1=0; call_score_v2 mean≈0.054)
 
 ## Baseline (Vevo)
 - Model: Amphion Vevo `vevotimbre`
