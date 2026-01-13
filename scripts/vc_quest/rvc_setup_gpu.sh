@@ -81,6 +81,48 @@ echo "[rvc_setup] Installing python deps (requirements-py311.txt)"
 python -m pip install -U ninja
 python -m pip install -U -r "${RVC_DIR}/requirements-py311.txt"
 
+echo "[rvc_setup] Patching RVC utils for newer matplotlib (tostring_rgb removal)"
+python - <<PY
+import re
+from pathlib import Path
+
+p = Path("${RVC_DIR}") / "infer" / "lib" / "train" / "utils.py"
+text = p.read_text(encoding="utf-8", errors="ignore")
+if "buffer_rgba" in text and "tostring_rgb" not in text:
+    print("[rvc_setup] utils.py already patched")
+    raise SystemExit(0)
+
+pattern = re.compile(
+    r"^(?P<indent>\\s*)data\\s*=\\s*np\\.fromstring\\(fig\\.canvas\\.tostring_rgb\\(\\),\\s*dtype=np\\.uint8,\\s*sep=\\\"\\\"\\)\\s*\\n"
+    r"(?P=indent)data\\s*=\\s*data\\.reshape\\(fig\\.canvas\\.get_width_height\\(\\)\\[::\\-1\\]\\s*\\+\\s*\\(3,\\)\\)\\s*$",
+    re.M,
+)
+
+def repl(m: re.Match) -> str:
+    ind = m.group("indent")
+    return "\\n".join(
+        [
+            f"{ind}w, h = fig.canvas.get_width_height()",
+            f'{ind}if hasattr(fig.canvas, "tostring_rgb"):',
+            f"{ind}    data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)",
+            f"{ind}    data = data.reshape((h, w, 3))",
+            f"{ind}else:",
+            f"{ind}    rgba = np.asarray(fig.canvas.buffer_rgba())",
+            f"{ind}    data = rgba[:, :, :3].copy()",
+        ]
+    )
+
+new_text, n = pattern.subn(repl, text)
+if n == 0:
+    print("[rvc_setup] utils.py did not need patch (no tostring_rgb usage found)")
+    raise SystemExit(0)
+if n != 2:
+    raise SystemExit(f"[rvc_setup] Expected 2 replacements, got {n}")
+
+p.write_text(new_text, encoding="utf-8")
+print("[rvc_setup] Patched:", p)
+PY
+
 echo "[rvc_setup] Downloading RVC base models (hubert/rmvpe/pretrained)"
 python "${RVC_DIR}/tools/download_models.py"
 
