@@ -49,11 +49,11 @@ python -m evaluation.vc_quest.score_playlist \
 ```
 
 Latest results (Vast RTX 4090, WER_MODE=`audio_ref`, Whisper `base` language=`fr`, 300 pairs):
-- **ClassicVC/MMCXLI** (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w1200_h400_end_full/summary_ear_v2.json`)
-  - call_score_v1 mean≈0.237, call_score_v2 mean≈0.270, ear_score_v2 mean≈0.295
-  - latency_p95_ms mean≈224, rtf_p95 mean≈0.060
-  - WER mean≈0.732, S-SIM(target) mean≈0.903
-  - Stable: dropouts (`dropout>0.01`): 3/300, silence/clip gates 0/300
+- **ClassicVC/MMCXLI** (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w1600_h400_end_full/summary.json`)
+  - call_score_v1 mean≈0.263, call_score_v2 mean≈0.305, ear_score_v2 mean≈0.336
+  - latency_p95_ms mean≈229, rtf_p95 mean≈0.073
+  - WER mean≈0.704, S-SIM(target) mean≈0.904
+  - Stable: dropouts (`dropout>0.01`): 2/300, silence/clip gates 0/300
 - **FreeVC** (call-latency preset, `runs/vc_quest/playlists/fleurs_fr_fr/freevc_w800_h400_end_full/summary_ear_v2.json`)
   - call_score_v1 mean≈0.122, call_score_v2 mean≈0.121, ear_score_v2 mean≈0.142
   - latency_p95_ms mean≈272, rtf_p95 mean≈0.179

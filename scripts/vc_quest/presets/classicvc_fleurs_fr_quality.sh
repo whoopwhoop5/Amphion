@@ -9,8 +9,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../../.."
 
-export RUN_NAME="${RUN_NAME:-classicvc_preset_quality_w1200_h400_end}"
-export STREAM_WINDOW_MS="1200"
+export RUN_NAME="${RUN_NAME:-classicvc_preset_quality_w1600_h400_end}"
+export STREAM_WINDOW_MS="1600"
 export STREAM_HOP_MS="400"
 export STREAM_FADE_MS="10"
 export EMIT_ALIGN="end"
@@ -27,4 +27,3 @@ export MASK_MODE="off"
 export WER_MODE="${WER_MODE:-audio_ref}"
 
 bash scripts/vc_quest/classicvc_run_fleurs_fr_playlist_gpu.sh
-

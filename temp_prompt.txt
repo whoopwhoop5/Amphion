@@ -17,7 +17,7 @@ WHAT WE WANT (our target use case)
 
 OUR CURRENT BASELINES (what candidates should aim to beat)
 - ClassicVC/MMCXLI (current best call-latency baseline): very low latency + better intelligibility than FreeVC, but weaker identity match.
-- On our French playlist (FLEURS fr_fr, 300 pairs): latency_p95 ≈ 224ms, WER ≈ 0.73, speaker similarity ≈ 0.90.
+- On our French playlist (FLEURS fr_fr, 300 pairs): latency_p95 ≈ 229ms, WER ≈ 0.70, speaker similarity ≈ 0.90.
 - FreeVC (best call-latency config): low latency + better identity than ClassicVC, but weak intelligibility + frequent dropouts.
 - On our French playlist (FLEURS fr_fr, 300 pairs): latency_p95 ≈ 272ms, WER ≈ 0.94, dropouts in ~30/300.
 - ChatterboxVC: much better WER/content and stable, but too high latency for call UX.
