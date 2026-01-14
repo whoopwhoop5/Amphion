@@ -49,10 +49,10 @@ python -m evaluation.vc_quest.score_playlist \
 ```
 
 Latest results (Vast RTX 4090, WER_MODE=`audio_ref`, Whisper `base` language=`fr`, 300 pairs):
-- **ClassicVC/MMCXLI** (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_w1600_h400_end_full/summary.json`)
-  - call_score_v1 mean≈0.263, call_score_v2 mean≈0.305, ear_score_v2 mean≈0.336
-  - latency_p95_ms mean≈229, rtf_p95 mean≈0.073
-  - WER mean≈0.704, S-SIM(target) mean≈0.904
+- **ClassicVC/MMCXLI** (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_stream_w1600_h400_end_delta_full/summary.json`)
+  - call_score_v1 mean≈0.370, call_score_v2 mean≈0.425, ear_score_v2 mean≈0.467
+  - latency_p95_ms mean≈228, rtf_p95 mean≈0.070
+  - WER mean≈0.683, S-SIM(target) mean≈0.902
   - Stable: dropouts (`dropout>0.01`): 2/300, silence/clip gates 0/300
 - **FreeVC** (call-latency preset, `runs/vc_quest/playlists/fleurs_fr_fr/freevc_w800_h400_end_full/summary_ear_v2.json`)
   - call_score_v1 mean≈0.122, call_score_v2 mean≈0.121, ear_score_v2 mean≈0.142
@@ -60,8 +60,8 @@ Latest results (Vast RTX 4090, WER_MODE=`audio_ref`, Whisper `base` language=`fr
   - WER mean≈0.935, S-SIM(target) mean≈0.931
   - Main issue: dropouts (`dropout>0.01`): 30/300
 - **ChatterboxVC** (quality reference, masked, `runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_w800_h400_s8_mask_gain5_full/summary_ear_v2.json`)
-  - ear_score_v2 mean≈0.641, WER mean≈0.607, S-SIM(target) mean≈0.957, dropouts 0/300
-  - Not call-latency under `call_score_v1` (latency_p95_ms≈797ms => call_score_v1=0; call_score_v2 mean≈0.054)
+  - ear_score_v2 mean≈0.638, WER mean≈0.615, S-SIM(target) mean≈0.957, dropouts 0/300
+  - Not call-latency under `call_score_v1` (latency_p95_ms≈800ms => call_score_v1=0; call_score_v2 mean≈0.045)
 - **RVC (training-based)** (LibriTTS speaker `6209`, ~29.2 min training data, 80 epochs @ 40kHz; evaluated on mixed 30 pairs: FLEURS fr_fr sources + LibriTTS target ref)
   - Streaming (`runs/vc_quest/playlists/fleurs_fr_fr/rvc_s6209_on_fleurs_w800_h400_end_full_v2/summary.json`):
     - call_score_v1 mean≈0.007, ear_score_v2 mean≈0.007 (fails badly)
@@ -85,6 +85,23 @@ Results:
 - **ChatterboxVC (quality preset)** (`chatterbox_fleurs_fr_quality.sh`, w800/h400 center, timesteps=8):
   - Mac smoke (`runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_mac_quality_w800_h400_s8_mask_gain5_smoke20/summary.json`): rtf_p95 mean≈1.99, latency_p95_ms mean≈1196
   - RTX 4090 full (computed from the saved per-case meta): rtf_p95 mean≈1.00, latency_p95_ms mean≈800 ⇒ Mac is ~+99% slower on rtf_p95 and ~+49% higher latency.
+
+## Wrapper A/B: offline upper bound vs streaming wrapper
+These runs quantify how much quality we lose from **chunkwise streaming** (limited context) versus the model’s offline upper bound, and whether our wrapper choices add extra degradation.
+
+All numbers below are **FLEURS fr_fr dev** (300 pairs), scored with `WER_MODE=audio_ref`, Whisper `base`, language `fr`.
+
+| model | mode | run | wer_mode | ear | wer | ssim | drop>0.01 | call_v1 | call_v2 | lat_p95_ms | rtf_p95 |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| ClassicVC | offline | classicvc_offline_full | audio_ref | 0.602 | 0.345 | 0.921 | 0 | 0.000 | 0.000 |  |  |
+| ClassicVC | stream | classicvc_stream_w1600_h400_end_full | audio_ref | 0.331 | 0.695 | 0.904 | 2 | 0.260 | 0.300 | 229.084 | 0.073 |
+| ClassicVC | stream+delta | classicvc_stream_w1600_h400_end_delta_full | audio_ref | 0.467 | 0.683 | 0.902 | 2 | 0.370 | 0.425 | 227.875 | 0.070 |
+| Chatterbox | offline | chatterbox_offline_full | audio_ref | 0.615 | 0.495 | 0.958 | 25 | 0.000 | 0.000 |  |  |
+| Chatterbox | stream(mask+gain) | chatterbox_w800_h400_s8_mask_gain5_full | audio_ref | 0.638 | 0.615 | 0.957 | 0 | 0.000 | 0.045 | 800.336 | 1.001 |
+
+Takeaways:
+- **ClassicVC:** most of the gap is from the **streaming context limit** (offline WER≈0.345 vs stream WER≈0.68). Wrapper details still matter: switching from overlap crossfade to **delta boundary smoothing** improved scores (ear≈0.33 → 0.47) without changing latency.
+- **Chatterbox:** offline has better content preservation (WER≈0.495 vs stream WER≈0.615), but our streaming wrapper (mask+gain) is extremely stable (0/300 dropouts). Latency remains ~0.8s at this config, so it’s not call-latency under `call_score_v1`.
 
 ## Baseline (Vevo)
 - Model: Amphion Vevo `vevotimbre`

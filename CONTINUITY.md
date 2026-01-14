@@ -158,11 +158,16 @@
     - ClassicVC w800/h400 end: rtf_p95≈0.82, latency_p95_ms≈529 (borderline on Mac CPU; quality drops).
     - Chatterbox w800/h400 center s8: rtf_p95≈1.99, latency_p95_ms≈1196 (not realtime on Mac MPS).
   - Made vc_quest ClassicVC/Chatterbox setup + playlist runner scripts portable on macOS (conda base autodetect, HF_HOME reuse, numpy<2 for ClassicVC onnxruntime compat).
-- Now: VC quest: ClassicVC/MMCXLI remains the best call-latency candidate on FLEURS fr_fr and improved further with w1600/h400 (better WER/ear_score at similar latency). FreeVC remains lower intelligibility + frequent dropouts; Chatterbox remains the quality/stability reference but is ~0.8s latency at realtime config (`call_score_v1=0` under strict threshold). GPT-SoVITS, MNP-SVC, and FasterSVC rejected for French call-VC.
+- VC quest (2026-01-14):
+  - Wrapper A/B (offline vs streaming) on Vast (FLEURS fr_fr dev 300 pairs, WER_MODE=audio_ref):
+    - ClassicVC: offline WER≈0.345/ear≈0.602 vs streaming WER≈0.68; delta boundary smoothing improved streaming ear≈0.33→0.47 at the same latency (~228ms).
+    - Chatterbox: offline WER≈0.495/ear≈0.615 vs streaming(mask+gain) WER≈0.615/ear≈0.638 (0/300 dropouts) but latency_p95_ms≈800ms => call_score_v1=0.
+- Now: VC quest: ClassicVC/MMCXLI remains the best call-latency candidate on FLEURS fr_fr; best validated streaming wrapper is w1600/h400 end + delta smoothing (ear_score_v2≈0.467, call_score_v1≈0.370, latency_p95_ms≈228). FreeVC remains lower intelligibility + frequent dropouts; Chatterbox remains the quality/stability reference but is ~0.8s latency at realtime config (`call_score_v1=0` under strict threshold). GPT-SoVITS, MNP-SVC, and FasterSVC rejected for French call-VC.
 - Next:
   - Continue scanning for new zero-shot call-VC competitors (e.g., Noro; see `docs/vc_quest.md` backlog).
   - Decide whether to adopt FreeVC gain/mask and rerun a full 300-pair evaluation for the best settings.
   - Add “worst cases” surfacing (case IDs/paths) for dropouts/glitches to speed subjective spot-checking.
+  - Improve glitch metrics so they stay meaningful even when boundary smoothing makes sample jumps ~0 by construction.
   - Revisit Chatterbox call-latency only if we can reduce algorithmic delay or inference time without WER collapse; otherwise treat as hard-limited for call UX.
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
