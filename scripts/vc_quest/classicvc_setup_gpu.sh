@@ -11,8 +11,18 @@ set -euo pipefail
 # - This is an ONNX Runtime pipeline (no torch required).
 # - If onnxruntime-gpu fails to install, we fall back to CPU onnxruntime.
 
-MINIFORGE_ROOT="/opt/miniforge3"
+MINIFORGE_ROOT="${MINIFORGE_ROOT:-/opt/miniforge3}"
+if [[ ! -x "${MINIFORGE_ROOT}/bin/conda" || ! -f "${MINIFORGE_ROOT}/etc/profile.d/conda.sh" ]]; then
+  if command -v conda >/dev/null 2>&1; then
+    MINIFORGE_ROOT="$(conda info --base)"
+  fi
+fi
+
 CONDA_BIN="${MINIFORGE_ROOT}/bin/conda"
+if [[ ! -x "${CONDA_BIN}" && -x "${MINIFORGE_ROOT}/condabin/conda" ]]; then
+  CONDA_BIN="${MINIFORGE_ROOT}/condabin/conda"
+fi
+
 CONDA_SH="${MINIFORGE_ROOT}/etc/profile.d/conda.sh"
 
 ENV_NAME="classicvc"
@@ -44,9 +54,17 @@ conda activate "${ENV_NAME}"
 
 python -m pip install -U pip setuptools wheel
 
-python -m pip install -U numpy scipy soundfile librosa tqdm webrtcvad huggingface_hub pyyaml
+python -m pip install -U "numpy<2" scipy soundfile librosa tqdm huggingface_hub pyyaml
+if ! python -m pip install -U webrtcvad; then
+  echo "[classicvc_setup] WARN: webrtcvad install failed; VAD_MODE=webrtc will not be available" >&2
+fi
 
-if ! python -m pip install -U onnxruntime-gpu; then
+if [[ "$(uname)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
+  if ! python -m pip install -U onnxruntime-silicon; then
+    echo "[classicvc_setup] WARN: onnxruntime-silicon install failed; falling back to onnxruntime" >&2
+    python -m pip install -U onnxruntime
+  fi
+elif ! python -m pip install -U onnxruntime-gpu; then
   echo "[classicvc_setup] WARN: onnxruntime-gpu install failed; falling back to CPU onnxruntime" >&2
   python -m pip install -U onnxruntime
 fi
@@ -107,4 +125,3 @@ echo "[classicvc_setup] weights summary:"
 ls -la "${MMCXLI_DIR}/weights" | head -n 200
 
 echo "[classicvc_setup] Done. Activate with: source ${CONDA_SH} && conda activate ${ENV_NAME}"
-

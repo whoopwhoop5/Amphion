@@ -5,8 +5,18 @@ set -euo pipefail
 # We do NOT install the chatterbox-tts package (its __init__ imports heavy TTS deps + pins torch==2.6.0).
 # Our evaluation wrapper imports chatterbox.vc directly from the repo checkout and only needs VC deps.
 
-MINIFORGE_ROOT="/opt/miniforge3"
+MINIFORGE_ROOT="${MINIFORGE_ROOT:-/opt/miniforge3}"
+if [[ ! -x "${MINIFORGE_ROOT}/bin/conda" || ! -f "${MINIFORGE_ROOT}/etc/profile.d/conda.sh" ]]; then
+  if command -v conda >/dev/null 2>&1; then
+    MINIFORGE_ROOT="$(conda info --base)"
+  fi
+fi
+
 CONDA_BIN="${MINIFORGE_ROOT}/bin/conda"
+if [[ ! -x "${CONDA_BIN}" && -x "${MINIFORGE_ROOT}/condabin/conda" ]]; then
+  CONDA_BIN="${MINIFORGE_ROOT}/condabin/conda"
+fi
+
 CONDA_SH="${MINIFORGE_ROOT}/etc/profile.d/conda.sh"
 
 ENV_NAME="chatterbox"
@@ -40,11 +50,18 @@ conda activate "${ENV_NAME}"
 
 python -m pip install -U pip setuptools wheel
 
-# GPU torch (cu121) is sufficient on the RTX 4090 instance.
-python -m pip install -U --index-url https://download.pytorch.org/whl/cu121 torch torchaudio
+# Torch: use CUDA wheels on GPU hosts; use default wheels on macOS.
+if [[ "$(uname)" == "Darwin" ]]; then
+  python -m pip install -U torch torchaudio
+else
+  python -m pip install -U --index-url "${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu121}" torch torchaudio
+fi
 
 # VC-only deps (avoid pulling the full chatterbox-tts dependency set).
-python -m pip install -U "numpy>=1.24.0,<1.26.0" scipy soundfile librosa==0.11.0 tqdm webrtcvad
+python -m pip install -U "numpy>=1.24.0,<1.26.0" scipy soundfile librosa==0.11.0 tqdm
+if ! python -m pip install -U webrtcvad; then
+  echo "[chatterbox_setup] WARN: webrtcvad install failed; VAD_MODE=webrtc will not be available" >&2
+fi
 python -m pip install -U huggingface_hub safetensors "resemble-perth==1.0.1" s3tokenizer omegaconf conformer==0.3.2
 python -m pip install -U "transformers==4.46.3" "diffusers==0.29.0"
 

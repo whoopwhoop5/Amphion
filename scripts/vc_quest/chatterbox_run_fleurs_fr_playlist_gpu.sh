@@ -3,9 +3,20 @@ set -euo pipefail
 
 # Runs ChatterboxVC over the deterministic French playlist, then scores the outputs.
 
-MINIFORGE_ROOT="/opt/miniforge3"
+MINIFORGE_ROOT="${MINIFORGE_ROOT:-/opt/miniforge3}"
+if [[ ! -f "${MINIFORGE_ROOT}/etc/profile.d/conda.sh" ]]; then
+  if command -v conda >/dev/null 2>&1; then
+    MINIFORGE_ROOT="$(conda info --base)"
+  fi
+fi
+
 CONDA_SH="${MINIFORGE_ROOT}/etc/profile.d/conda.sh"
-ENV_NAME="chatterbox"
+if [[ ! -f "${CONDA_SH}" ]]; then
+  echo "[chatterbox_run_fleurs_fr_playlist] Missing conda.sh at ${CONDA_SH}. Set MINIFORGE_ROOT or install conda." >&2
+  exit 1
+fi
+
+ENV_NAME="${ENV_NAME:-chatterbox}"
 
 cd "$(dirname "$0")/../.."
 
@@ -20,6 +31,11 @@ CHATTERBOX_DIR="${HOME}/deps/chatterbox"
 SEED="${SEED:-0}"
 CFM_TIMESTEPS="${CFM_TIMESTEPS:-8}"
 WATERMARK="${WATERMARK:-1}"
+
+# Reuse the setup script's cache location to avoid re-downloading ~1GB checkpoints.
+HF_HOME_DIR="${HF_HOME_DIR:-${HOME}/.hf_home}"
+mkdir -p "${HF_HOME_DIR}"
+export HF_HOME="${HF_HOME_DIR}"
 
 STREAM_WINDOW_MS="${STREAM_WINDOW_MS:-800}"
 STREAM_HOP_MS="${STREAM_HOP_MS:-400}"
@@ -58,6 +74,19 @@ fi
 source "${CONDA_SH}"
 conda activate "${ENV_NAME}"
 
+if [[ -z "${MODEL_DEVICE:-}" ]]; then
+  MODEL_DEVICE="$(python - <<'PY'
+import torch
+if torch.cuda.is_available():
+    print("cuda:0")
+elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+    print("mps")
+else:
+    print("cpu")
+PY
+)"
+fi
+
 WATERMARK_ARGS=()
 if [[ "${WATERMARK}" == "0" ]]; then
   WATERMARK_ARGS+=(--no-watermark)
@@ -69,7 +98,7 @@ python -m evaluation.vc_quest.chatterbox_playlist_convert \
   --manifest "${MANIFEST}" \
   --out_dir "${RUN_DIR}" \
   --chatterbox_dir "${CHATTERBOX_DIR}" \
-  --device cuda:0 \
+  --device "${MODEL_DEVICE}" \
   --seed "${SEED}" \
   --cfm_timesteps "${CFM_TIMESTEPS}" \
   "${WATERMARK_ARGS[@]}" \
@@ -115,6 +144,6 @@ python -m evaluation.vc_quest.score_playlist \
   --whisper_model base \
   --whisper_language fr \
   --wer_mode "${WER_MODE}" \
-  "${SCORE_ARGS[@]}"
+  "${SCORE_ARGS[@]+"${SCORE_ARGS[@]}"}"
 
 echo "[chatterbox_run_fleurs_fr_playlist] Wrote ${RUN_DIR}/summary.json"

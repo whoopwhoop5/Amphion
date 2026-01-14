@@ -70,6 +70,22 @@ Latest results (Vast RTX 4090, WER_MODE=`audio_ref`, Whisper `base` language=`fr
   - Same mixed playlist baseline for comparison: ClassicVC is strong (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_on_fleurs_to_libritts_s6209_w1600_h400_end/summary.json`): call_score_v1 mean≈0.266, WER mean≈0.563, S-SIM(target) mean≈0.754
   - Conclusion: RVC is **not competitive** for French call VC in our setup; likely reject unless we swap to a more multilingual content encoder and add stronger silence gating.
 
+### macOS vs RTX 4090 performance (smoke)
+These are *device* benchmarks (not full leaderboard runs). They help answer “can this run locally on a Mac?”
+
+- Host: macOS arm64 (Apple Silicon). Chatterbox uses Torch `mps` when available; ClassicVC/MMCXLI uses ONNX Runtime **CPUExecutionProvider** (no CUDA/CoreML path in upstream MMCXLI).
+- Settings: WER_MODE=`audio_ref`, Whisper `base`, language=`fr`. Smoke sizes were `MAX_PAIRS=20–26`.
+
+Results:
+- **ClassicVC/MMCXLI (quality preset)** (`classicvc_fleurs_fr_quality.sh`, w1600/h400 end):
+  - Mac smoke (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_mac_quality_w1600_h400_end_smoke50/summary.json`): rtf_p95 mean≈1.73, latency_p95_ms mean≈894
+  - RTX 4090 full: rtf_p95 mean≈0.073, latency_p95_ms mean≈229 ⇒ Mac is ~+2276% slower on rtf_p95 and ~+290% higher latency.
+- **ClassicVC/MMCXLI (call-latency preset)** (`classicvc_fleurs_fr_call_latency.sh`, w800/h400 end):
+  - Mac smoke (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_mac_call_w800_h400_end_smoke20/summary.json`): rtf_p95 mean≈0.82, latency_p95_ms mean≈529 (borderline); quality drops (WER mean≈0.94).
+- **ChatterboxVC (quality preset)** (`chatterbox_fleurs_fr_quality.sh`, w800/h400 center, timesteps=8):
+  - Mac smoke (`runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_mac_quality_w800_h400_s8_mask_gain5_smoke20/summary.json`): rtf_p95 mean≈1.99, latency_p95_ms mean≈1196
+  - RTX 4090 full (computed from the saved per-case meta): rtf_p95 mean≈1.00, latency_p95_ms mean≈800 ⇒ Mac is ~+99% slower on rtf_p95 and ~+49% higher latency.
+
 ## Baseline (Vevo)
 - Model: Amphion Vevo `vevotimbre`
 - Current best live-like config (RTX 4090): `window_ms=2000`, `hop_ms=500`, `flow_matching_steps=6`, `fade_ms=10`

@@ -54,6 +54,7 @@ pretrained/bigvgan/args.json
 !assets/vevo_live/**/*.wav
 
 # Runtime data dirs
+.venv/
 processed_data
 data
 model_ckpt

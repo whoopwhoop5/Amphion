@@ -152,6 +152,12 @@
       - RVC streaming: call_score_v1≈0.007, ear_score_v2≈0.007, WER≈1.109, S-SIM(target)≈0.699, silent_out_db_p95≈-15dB (very loud).
       - ClassicVC baseline on same playlist: call_score_v1≈0.266, WER≈0.563, S-SIM(target)≈0.754.
     - Conclusion: RVC is not competitive for French call-VC in our setup; bead `Amphion-ehh.28` closed.
+- VC quest (2026-01-14):
+  - Benchmarked macOS arm64 vs Vast RTX 4090 for ClassicVC/MMCXLI + ChatterboxVC (FLEURS fr_fr, WER_MODE=audio_ref, smoke `MAX_PAIRS=20–26`):
+    - ClassicVC w1600/h400 end: rtf_p95≈1.73, latency_p95_ms≈894 (not realtime on Mac CPU).
+    - ClassicVC w800/h400 end: rtf_p95≈0.82, latency_p95_ms≈529 (borderline on Mac CPU; quality drops).
+    - Chatterbox w800/h400 center s8: rtf_p95≈1.99, latency_p95_ms≈1196 (not realtime on Mac MPS).
+  - Made vc_quest ClassicVC/Chatterbox setup + playlist runner scripts portable on macOS (conda base autodetect, HF_HOME reuse, numpy<2 for ClassicVC onnxruntime compat).
 - Now: VC quest: ClassicVC/MMCXLI remains the best call-latency candidate on FLEURS fr_fr and improved further with w1600/h400 (better WER/ear_score at similar latency). FreeVC remains lower intelligibility + frequent dropouts; Chatterbox remains the quality/stability reference but is ~0.8s latency at realtime config (`call_score_v1=0` under strict threshold). GPT-SoVITS, MNP-SVC, and FasterSVC rejected for French call-VC.
 - Next:
   - Continue scanning for new zero-shot call-VC competitors (e.g., Noro; see `docs/vc_quest.md` backlog).

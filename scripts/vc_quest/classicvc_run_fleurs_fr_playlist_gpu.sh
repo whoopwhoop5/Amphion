@@ -3,9 +3,20 @@ set -euo pipefail
 
 # Runs ClassicVC/MMCXLI over the deterministic French playlist, then scores the outputs.
 
-MINIFORGE_ROOT="/opt/miniforge3"
+MINIFORGE_ROOT="${MINIFORGE_ROOT:-/opt/miniforge3}"
+if [[ ! -f "${MINIFORGE_ROOT}/etc/profile.d/conda.sh" ]]; then
+  if command -v conda >/dev/null 2>&1; then
+    MINIFORGE_ROOT="$(conda info --base)"
+  fi
+fi
+
 CONDA_SH="${MINIFORGE_ROOT}/etc/profile.d/conda.sh"
-ENV_NAME="classicvc"
+if [[ ! -f "${CONDA_SH}" ]]; then
+  echo "[classicvc_run_fleurs_fr_playlist] Missing conda.sh at ${CONDA_SH}. Set MINIFORGE_ROOT or install conda." >&2
+  exit 1
+fi
+
+ENV_NAME="${ENV_NAME:-classicvc}"
 
 cd "$(dirname "$0")/../.."
 
@@ -17,7 +28,13 @@ RUN_DIR="runs/vc_quest/playlists/fleurs_fr_fr/${RUN_NAME}"
 mkdir -p "${RUN_DIR}"
 
 MMCXLI_DIR="${HOME}/deps/mmcxli"
-MODEL_DEVICE="${MODEL_DEVICE:-cuda}"
+if [[ -z "${MODEL_DEVICE:-}" ]]; then
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    MODEL_DEVICE="cuda"
+  else
+    MODEL_DEVICE="cpu"
+  fi
+fi
 SEED="${SEED:-0}"
 REF_MAX_SEC="${REF_MAX_SEC:-10.0}"
 
@@ -123,6 +140,6 @@ python -m evaluation.vc_quest.score_playlist \
   --whisper_model base \
   --whisper_language fr \
   --wer_mode "${WER_MODE}" \
-  "${SCORE_ARGS[@]}"
+  "${SCORE_ARGS[@]+"${SCORE_ARGS[@]}"}"
 
 echo "[classicvc_run_fleurs_fr_playlist] Wrote ${RUN_DIR}/summary.json"
