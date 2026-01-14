@@ -43,6 +43,7 @@ STREAM_HOP_MS="${STREAM_HOP_MS:-400}"
 STREAM_FADE_MS="${STREAM_FADE_MS:-10}"
 
 EMIT_ALIGN="${EMIT_ALIGN:-end}"
+STREAM="${STREAM:-1}"
 
 ABSOLUTE_PITCH="${ABSOLUTE_PITCH:-1}"
 ESTIMATE_ENERGY="${ESTIMATE_ENERGY:-0}"
@@ -90,6 +91,31 @@ fi
 EXTRA_ARGS+=(--pitch_shift "${PITCH_SHIFT}")
 EXTRA_ARGS+=(--content_expand_rate "${CONTENT_EXPAND_RATE}")
 
+STREAM_ARGS=()
+if [[ "${STREAM}" == "1" ]]; then
+  STREAM_ARGS+=(--stream)
+  STREAM_ARGS+=(--window_ms "${STREAM_WINDOW_MS}")
+  STREAM_ARGS+=(--hop_ms "${STREAM_HOP_MS}")
+  STREAM_ARGS+=(--fade_ms "${STREAM_FADE_MS}")
+  STREAM_ARGS+=(--emit_align "${EMIT_ALIGN}")
+  STREAM_ARGS+=(--vad_mode "${VAD_MODE}")
+  STREAM_ARGS+=(--vad_db "${VAD_DB}")
+  STREAM_ARGS+=(--vad_frame_ms "${VAD_FRAME_MS}")
+  STREAM_ARGS+=(--vad_hangover_ms "${VAD_HANGOVER_MS}")
+  STREAM_ARGS+=(--vad_webrtc_aggressiveness "${VAD_WEBRTC_AGGRESSIVENESS}")
+  STREAM_ARGS+=(--vad_webrtc_frame_ms "${VAD_WEBRTC_FRAME_MS}")
+  STREAM_ARGS+=(--vad_webrtc_min_voiced_ratio "${VAD_WEBRTC_MIN_VOICED_RATIO}")
+  STREAM_ARGS+=(--gain_mode "${GAIN_MODE}")
+  STREAM_ARGS+=(--gain_target_delta_db "${GAIN_TARGET_DELTA_DB}")
+  STREAM_ARGS+=(--gain_max_boost_db "${GAIN_MAX_BOOST_DB}")
+  STREAM_ARGS+=(--gain_smoothing "${GAIN_SMOOTHING}")
+  STREAM_ARGS+=(--mask_mode "${MASK_MODE}")
+  STREAM_ARGS+=(--mask_db "${MASK_DB}")
+  STREAM_ARGS+=(--mask_frame_ms "${MASK_FRAME_MS}")
+  STREAM_ARGS+=(--mask_smooth_ms "${MASK_SMOOTH_MS}")
+  STREAM_ARGS+=(--peak_limit "${PEAK_LIMIT}")
+fi
+
 python -m evaluation.vc_quest.classicvc_playlist_convert \
   --manifest "${MANIFEST}" \
   --out_dir "${RUN_DIR}" \
@@ -98,28 +124,8 @@ python -m evaluation.vc_quest.classicvc_playlist_convert \
   --seed "${SEED}" \
   --ref_max_sec "${REF_MAX_SEC}" \
   "${EXTRA_ARGS[@]}" \
-  --stream \
-  --window_ms "${STREAM_WINDOW_MS}" \
-  --hop_ms "${STREAM_HOP_MS}" \
-  --fade_ms "${STREAM_FADE_MS}" \
-  --emit_align "${EMIT_ALIGN}" \
   --max_pairs "${MAX_PAIRS}" \
-  --vad_mode "${VAD_MODE}" \
-  --vad_db "${VAD_DB}" \
-  --vad_frame_ms "${VAD_FRAME_MS}" \
-  --vad_hangover_ms "${VAD_HANGOVER_MS}" \
-  --vad_webrtc_aggressiveness "${VAD_WEBRTC_AGGRESSIVENESS}" \
-  --vad_webrtc_frame_ms "${VAD_WEBRTC_FRAME_MS}" \
-  --vad_webrtc_min_voiced_ratio "${VAD_WEBRTC_MIN_VOICED_RATIO}" \
-  --gain_mode "${GAIN_MODE}" \
-  --gain_target_delta_db "${GAIN_TARGET_DELTA_DB}" \
-  --gain_max_boost_db "${GAIN_MAX_BOOST_DB}" \
-  --gain_smoothing "${GAIN_SMOOTHING}" \
-  --mask_mode "${MASK_MODE}" \
-  --mask_db "${MASK_DB}" \
-  --mask_frame_ms "${MASK_FRAME_MS}" \
-  --mask_smooth_ms "${MASK_SMOOTH_MS}" \
-  --peak_limit "${PEAK_LIMIT}"
+  "${STREAM_ARGS[@]+"${STREAM_ARGS[@]}"}"
 
 conda deactivate || true
 
