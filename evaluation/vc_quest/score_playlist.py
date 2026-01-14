@@ -154,7 +154,9 @@ def _brief_case(case: dict[str, Any]) -> dict[str, Any]:
         "case_id",
         "call_score_v1",
         "call_score_v2",
+        "call_score_v3",
         "ear_score_v2",
+        "ear_score_v3",
         "wer",
         "asr_confidence_v1",
         "speaker_similarity_target",
@@ -165,6 +167,7 @@ def _brief_case(case: dict[str, Any]) -> dict[str, Any]:
         "artifact_silent_out_db_p95",
         "artifact_silence_leak_run_ms_p95",
         "glitch_boundary_jump_ratio_p95",
+        "glitch_boundary_flux_ratio_p95",
         "paths",
     ]
     out: dict[str, Any] = {}
@@ -449,6 +452,56 @@ def _call_score_v2(
     return float(_clamp01(quality * stability * s_glitch * s_rtf * s_latency))
 
 
+def _call_score_v3(
+    *,
+    wer: float,
+    speaker_similarity_target: float,
+    asr_avg_logprob_p10: float,
+    asr_compression_ratio_p90: float,
+    silent_out_db_p95: float,
+    silence_leak_run_ms_p95: float,
+    dropout_frac_voiced: float,
+    dropout_run_ms_p95: float,
+    clip_frac: float,
+    glitch_boundary_jump_ratio_p95: float,
+    glitch_boundary_flux_ratio_p95: float,
+    rtf_p95: float,
+    latency_p95_ms: float,
+) -> float:
+    s_sim = _score_higher_is_better(speaker_similarity_target, good=0.97, bad=0.90)
+    s_wer = _score_lower_is_better(wer, good=0.55, bad=1.05)
+    s_asr = _asr_confidence_score_v1(
+        asr_avg_logprob_p10=asr_avg_logprob_p10,
+        asr_compression_ratio_p90=asr_compression_ratio_p90,
+    )
+
+    s_silence = _score_lower_is_better(silent_out_db_p95, good=-40.0, bad=-25.0)
+    s_leak_run = _score_lower_is_better(silence_leak_run_ms_p95, good=0.0, bad=250.0)
+    s_dropout = _score_lower_is_better(dropout_frac_voiced, good=0.0, bad=0.01)
+    s_dropout_run = _score_lower_is_better(dropout_run_ms_p95, good=0.0, bad=80.0)
+    s_clip = _score_lower_is_better(clip_frac, good=0.0, bad=0.001)
+
+    s_jump = (
+        _score_lower_is_better(glitch_boundary_jump_ratio_p95, good=2.0, bad=8.0)
+        if np.isfinite(glitch_boundary_jump_ratio_p95)
+        else 1.0
+    )
+    s_flux = (
+        _score_lower_is_better(glitch_boundary_flux_ratio_p95, good=1.0, bad=2.0)
+        if np.isfinite(glitch_boundary_flux_ratio_p95)
+        else 1.0
+    )
+    s_glitch = float(_clamp01(s_jump * s_flux))
+
+    s_rtf = _score_lower_is_better(rtf_p95, good=0.85, bad=1.05)
+    s_latency = _score_lower_is_better(latency_p95_ms, good=150.0, bad=1000.0)
+
+    quality = 0.40 * s_sim + 0.35 * s_wer + 0.25 * s_asr
+    stability = s_silence * s_leak_run * s_dropout * s_dropout_run * s_clip
+
+    return float(_clamp01(quality * stability * s_glitch * s_rtf * s_latency))
+
+
 def _ear_score_v2(
     *,
     wer: float,
@@ -486,6 +539,50 @@ def _ear_score_v2(
 
     return float(_clamp01(quality * stability * s_glitch))
 
+
+def _ear_score_v3(
+    *,
+    wer: float,
+    speaker_similarity_target: float,
+    asr_avg_logprob_p10: float,
+    asr_compression_ratio_p90: float,
+    silent_out_db_p95: float,
+    silence_leak_run_ms_p95: float,
+    dropout_frac_voiced: float,
+    dropout_run_ms_p95: float,
+    clip_frac: float,
+    glitch_boundary_jump_ratio_p95: float,
+    glitch_boundary_flux_ratio_p95: float,
+) -> float:
+    s_sim = _score_higher_is_better(speaker_similarity_target, good=0.97, bad=0.90)
+    s_wer = _score_lower_is_better(wer, good=0.55, bad=1.05)
+    s_asr = _asr_confidence_score_v1(
+        asr_avg_logprob_p10=asr_avg_logprob_p10,
+        asr_compression_ratio_p90=asr_compression_ratio_p90,
+    )
+
+    s_silence = _score_lower_is_better(silent_out_db_p95, good=-40.0, bad=-25.0)
+    s_leak_run = _score_lower_is_better(silence_leak_run_ms_p95, good=0.0, bad=250.0)
+    s_dropout = _score_lower_is_better(dropout_frac_voiced, good=0.0, bad=0.01)
+    s_dropout_run = _score_lower_is_better(dropout_run_ms_p95, good=0.0, bad=80.0)
+    s_clip = _score_lower_is_better(clip_frac, good=0.0, bad=0.001)
+
+    s_jump = (
+        _score_lower_is_better(glitch_boundary_jump_ratio_p95, good=2.0, bad=8.0)
+        if np.isfinite(glitch_boundary_jump_ratio_p95)
+        else 1.0
+    )
+    s_flux = (
+        _score_lower_is_better(glitch_boundary_flux_ratio_p95, good=1.0, bad=2.0)
+        if np.isfinite(glitch_boundary_flux_ratio_p95)
+        else 1.0
+    )
+    s_glitch = float(_clamp01(s_jump * s_flux))
+
+    quality = 0.40 * s_sim + 0.35 * s_wer + 0.25 * s_asr
+    stability = s_silence * s_leak_run * s_dropout * s_dropout_run * s_clip
+
+    return float(_clamp01(quality * stability * s_glitch))
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
@@ -607,7 +704,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         gm: dict[str, float] = {}
         if hop_ms > 0:
             hop_samples = int(round(float(hop_ms) / 1000.0 * float(deg_sr)))
-            gm = glitch_metrics(deg, hop_samples=hop_samples)
+            gm = glitch_metrics(deg, hop_samples=hop_samples, sample_rate=deg_sr)
 
         pm: dict[str, float] = {}
         if bool(args.pitch_metrics):
@@ -739,6 +836,52 @@ def main(argv: Optional[list[str]] = None) -> int:
             ),
         )
 
+        call_score_v3 = _call_score_v3(
+            wer=float(wer) if np.isfinite(wer) else float("nan"),
+            speaker_similarity_target=float(sim_tgt),
+            asr_avg_logprob_p10=float(asr_metrics.get("asr_avg_logprob_p10", float("nan"))),
+            asr_compression_ratio_p90=float(
+                asr_metrics.get("asr_compression_ratio_p90", float("nan"))
+            ),
+            silent_out_db_p95=float(am.get("silent_out_db_p95", float("nan"))),
+            silence_leak_run_ms_p95=float(
+                am.get("silence_leak_run_ms_p95", float("nan"))
+            ),
+            dropout_frac_voiced=float(am.get("dropout_frac_voiced", float("nan"))),
+            dropout_run_ms_p95=float(am.get("dropout_run_ms_p95", float("nan"))),
+            clip_frac=float(am.get("clip_frac", float("nan"))),
+            glitch_boundary_jump_ratio_p95=float(
+                gm.get("boundary_jump_ratio_p95", float("nan"))
+            ),
+            glitch_boundary_flux_ratio_p95=float(
+                gm.get("boundary_flux_ratio_p95", float("nan"))
+            ),
+            rtf_p95=float(rtf_p95),
+            latency_p95_ms=float(latency_p95_ms),
+        )
+
+        ear_score_v3 = _ear_score_v3(
+            wer=float(wer) if np.isfinite(wer) else float("nan"),
+            speaker_similarity_target=float(sim_tgt),
+            asr_avg_logprob_p10=float(asr_metrics.get("asr_avg_logprob_p10", float("nan"))),
+            asr_compression_ratio_p90=float(
+                asr_metrics.get("asr_compression_ratio_p90", float("nan"))
+            ),
+            silent_out_db_p95=float(am.get("silent_out_db_p95", float("nan"))),
+            silence_leak_run_ms_p95=float(
+                am.get("silence_leak_run_ms_p95", float("nan"))
+            ),
+            dropout_frac_voiced=float(am.get("dropout_frac_voiced", float("nan"))),
+            dropout_run_ms_p95=float(am.get("dropout_run_ms_p95", float("nan"))),
+            clip_frac=float(am.get("clip_frac", float("nan"))),
+            glitch_boundary_jump_ratio_p95=float(
+                gm.get("boundary_jump_ratio_p95", float("nan"))
+            ),
+            glitch_boundary_flux_ratio_p95=float(
+                gm.get("boundary_flux_ratio_p95", float("nan"))
+            ),
+        )
+
         case = {
             "case_id": cid,
             "source_id": pair.source_id,
@@ -767,6 +910,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             "asr_confidence_v1": float(asr_confidence_v1),
             "call_score_v2": float(call_score_v2),
             "ear_score_v2": float(ear_score_v2),
+            "call_score_v3": float(call_score_v3),
+            "ear_score_v3": float(ear_score_v3),
             **{f"artifact_{k}": float(v) for k, v in am.items()},
             **{f"glitch_{k}": float(v) for k, v in gm.items()},
             **{f"pitch_{k}": float(v) for k, v in pm.items()},
@@ -857,8 +1002,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             "lowest_call_score_v2": _topk_cases(
                 per_case, key="call_score_v2", k=worst_k, reverse=False
             ),
+            "lowest_call_score_v3": _topk_cases(
+                per_case, key="call_score_v3", k=worst_k, reverse=False
+            ),
             "lowest_ear_score_v2": _topk_cases(
                 per_case, key="ear_score_v2", k=worst_k, reverse=False
+            ),
+            "lowest_ear_score_v3": _topk_cases(
+                per_case, key="ear_score_v3", k=worst_k, reverse=False
             ),
             "highest_wer": _topk_cases(per_case, key="wer", k=worst_k, reverse=True),
             "lowest_asr_avg_logprob_p10": _topk_cases(
@@ -887,6 +1038,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             ),
             "highest_glitch_boundary_jump_ratio_p95": _topk_cases(
                 per_case, key="glitch_boundary_jump_ratio_p95", k=worst_k, reverse=True
+            ),
+            "highest_glitch_boundary_flux_ratio_p95": _topk_cases(
+                per_case, key="glitch_boundary_flux_ratio_p95", k=worst_k, reverse=True
             ),
         }
         summary["worst_cases"] = worst_cases

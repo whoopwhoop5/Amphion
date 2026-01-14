@@ -328,14 +328,25 @@ def glitch_metrics(
     wav: np.ndarray,
     *,
     hop_samples: int,
+    sample_rate: int | None = None,
 ) -> dict[str, float]:
     wav = wav.reshape(-1).astype(np.float32, copy=False)
     if hop_samples <= 0:
-        return {"boundary_jump_ratio_mean": 0.0, "boundary_jump_ratio_p95": 0.0}
+        return {
+            "boundary_jump_ratio_mean": 0.0,
+            "boundary_jump_ratio_p95": 0.0,
+            "boundary_flux_ratio_mean": 0.0,
+            "boundary_flux_ratio_p95": 0.0,
+        }
 
     diffs = np.abs(np.diff(wav))
     if diffs.size == 0:
-        return {"boundary_jump_ratio_mean": 0.0, "boundary_jump_ratio_p95": 0.0}
+        return {
+            "boundary_jump_ratio_mean": 0.0,
+            "boundary_jump_ratio_p95": 0.0,
+            "boundary_flux_ratio_mean": 0.0,
+            "boundary_flux_ratio_p95": 0.0,
+        }
 
     # Use a high percentile baseline so typical speech dynamics don't look like huge "jumps".
     base = max(float(np.percentile(diffs, 99)), 1e-3)
@@ -346,13 +357,66 @@ def glitch_metrics(
             continue
         jumps.append(abs(float(wav[idx]) - float(wav[idx - 1])) / base)
 
-    if not jumps:
-        return {"boundary_jump_ratio_mean": 0.0, "boundary_jump_ratio_p95": 0.0}
+    jumps_np = np.asarray(jumps, dtype=np.float32) if jumps else np.zeros(0, dtype=np.float32)
 
-    jumps_np = np.asarray(jumps, dtype=np.float32)
+    # Spectral-flux glitch metric: detects abrupt spectral changes near hop boundaries.
+    # This stays meaningful even if boundary smoothing forces sample continuity.
+    flux_ratios: list[float] = []
+    if (
+        sample_rate is not None
+        and int(sample_rate) > 0
+        and hop_samples > 0
+        and len(wav) >= int(sample_rate) // 10
+    ):
+        sr = int(sample_rate)
+        # 20ms analysis window, 10ms hop (common for speech features).
+        frame_len = int(round(0.020 * float(sr)))
+        frame_hop = int(round(0.010 * float(sr)))
+        frame_len = int(max(32, frame_len))
+        frame_hop = int(max(16, frame_hop))
+        if len(wav) >= frame_len + frame_hop:
+            n_frames = 1 + (len(wav) - frame_len) // frame_hop
+            if n_frames >= 2:
+                x = np.ascontiguousarray(wav, dtype=np.float32)
+                stride = int(x.strides[0])
+                frames = np.lib.stride_tricks.as_strided(
+                    x,
+                    shape=(int(n_frames), int(frame_len)),
+                    strides=(int(frame_hop) * stride, stride),
+                )
+                win = np.hanning(int(frame_len)).astype(np.float32, copy=False)
+                n_fft = 1 << (int(frame_len) - 1).bit_length()
+                n_fft = int(min(max(n_fft, 256), 2048))
+                spec = np.fft.rfft(frames * win[None, :], n=n_fft, axis=1)
+                mag = np.abs(spec).astype(np.float32, copy=False)
+                logmag = np.log(mag + 1e-7)
+                flux = np.mean(np.abs(np.diff(logmag, axis=0)), axis=1)  # (n_frames-1,)
+                if flux.size:
+                    # Use a high-percentile baseline (but not too extreme) so typical speech dynamics
+                    # don't get penalized, while boundary-specific spikes still stand out.
+                    base_flux = max(float(np.percentile(flux, 95)), 1e-4)
+                    # flux[i] corresponds to the transition into frame i+1, at sample (i+1)*frame_hop.
+                    for idx in range(hop_samples, len(wav), hop_samples):
+                        approx = int(np.rint(float(idx) / float(frame_hop)))
+                        approx = int(np.clip(approx, 1, int(n_frames - 1)))
+                        fi = approx - 1
+                        flux_ratios.append(float(flux[fi]) / base_flux)
+
+    flux_np = (
+        np.asarray(flux_ratios, dtype=np.float32)
+        if flux_ratios
+        else np.zeros(0, dtype=np.float32)
+    )
+
     return {
-        "boundary_jump_ratio_mean": float(np.mean(jumps_np)),
-        "boundary_jump_ratio_p95": float(np.percentile(jumps_np, 95)),
+        "boundary_jump_ratio_mean": float(np.mean(jumps_np)) if jumps_np.size else 0.0,
+        "boundary_jump_ratio_p95": float(np.percentile(jumps_np, 95))
+        if jumps_np.size
+        else 0.0,
+        "boundary_flux_ratio_mean": float(np.mean(flux_np)) if flux_np.size else 0.0,
+        "boundary_flux_ratio_p95": float(np.percentile(flux_np, 95))
+        if flux_np.size
+        else 0.0,
     }
 
 

@@ -303,8 +303,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--meta_json", type=str, default="", help="Optional JSON path to write run metadata")
 
     parser.add_argument("--stream", action="store_true", help="Run window/hop streaming simulation.")
-    parser.add_argument("--window_ms", type=int, default=800)
-    parser.add_argument("--hop_ms", type=int, default=400)
+    parser.add_argument(
+        "--window_ms",
+        type=int,
+        default=800,
+        help="Streaming window size in ms. Use 0 to run one full-utterance window (equivalence test).",
+    )
+    parser.add_argument(
+        "--hop_ms",
+        type=int,
+        default=400,
+        help="Streaming hop size in ms. Use 0 to run one full-utterance hop (equivalence test).",
+    )
     parser.add_argument("--fade_ms", type=int, default=10)
     parser.add_argument("--normalize_align", type=str, default="end", choices=["start", "end"])
     parser.add_argument("--emit_align", type=str, default="center", choices=["start", "center", "end"])
@@ -407,15 +417,29 @@ def main(argv: Optional[list[str]] = None) -> int:
         out = np.asarray(out, dtype=np.float32).reshape(-1)
         sf.write(args.out, out, out_sr)
     else:
-        window_in = int(round(float(args.window_ms) / 1000.0 * float(in_sr)))
-        hop_in = int(round(float(args.hop_ms) / 1000.0 * float(in_sr)))
+        # window_ms/hop_ms allow 0 as a sentinel meaning "use the full utterance length"
+        # (useful for streaming-vs-offline equivalence tests without padding).
+        if float(args.window_ms) > 0:
+            window_in = int(round(float(args.window_ms) / 1000.0 * float(in_sr)))
+        else:
+            window_in = int(len(src_16k))
+        if float(args.hop_ms) > 0:
+            hop_in = int(round(float(args.hop_ms) / 1000.0 * float(in_sr)))
+        else:
+            hop_in = int(window_in)
         if window_in <= 0 or hop_in <= 0:
-            raise ValueError("window_ms and hop_ms must be > 0")
+            raise ValueError("window_ms and hop_ms must be > 0 (or 0 to use full utterance)")
         if hop_in > window_in:
             raise ValueError("hop_ms must be <= window_ms")
 
-        window_out = int(round(float(args.window_ms) / 1000.0 * float(out_sr)))
-        hop_out = int(round(float(args.hop_ms) / 1000.0 * float(out_sr)))
+        if float(args.window_ms) > 0:
+            window_out = int(round(float(args.window_ms) / 1000.0 * float(out_sr)))
+        else:
+            window_out = int(round(float(window_in) * float(out_sr) / float(in_sr)))
+        if float(args.hop_ms) > 0:
+            hop_out = int(round(float(args.hop_ms) / 1000.0 * float(out_sr)))
+        else:
+            hop_out = int(round(float(hop_in) * float(out_sr) / float(in_sr)))
         fade_out = int(round(float(args.fade_ms) / 1000.0 * float(out_sr)))
 
         if args.emit_align == "start":
@@ -436,7 +460,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         drop_warmup_hops = bool(args.drop_warmup_hops)
         window_count = 0
 
-        hangover_hops = int(np.ceil(float(args.vad_hangover_ms) / max(float(args.hop_ms), 1e-6)))
+        hop_ms_eff = float(args.hop_ms) if float(args.hop_ms) > 0 else (1000.0 * float(hop_in) / float(in_sr))
+        hangover_hops = int(np.ceil(float(args.vad_hangover_ms) / max(hop_ms_eff, 1e-6)))
         hangover_left = 0
         gain_db_state = 0.0
 

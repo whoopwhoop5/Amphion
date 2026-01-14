@@ -160,6 +160,7 @@ def main(argv: list[str] | None = None) -> int:
         gm = glitch_metrics(
             np.asarray(out_wav).reshape(-1),
             hop_samples=int(round(cfg.streaming.hop_ms / 1000 * sr)),
+            sample_rate=int(sr),
         )
         click_p95s.append(gm["boundary_jump_ratio_p95"])
 
