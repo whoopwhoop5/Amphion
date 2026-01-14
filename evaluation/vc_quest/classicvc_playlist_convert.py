@@ -29,11 +29,11 @@ from evaluation.vc_quest.streaming_utils import (
     AudioRingBuffer,
     apply_peak_limiter,
     build_rms_mask,
-    crossfade_prefix_inplace,
     is_silent_rms_db,
     is_voiced_webrtcvad,
     normalize_length,
     rms_db,
+    smooth_boundary_inplace,
 )
 
 
@@ -274,7 +274,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                     raise ValueError(f"Unknown emit_align: {args.emit_align}")
 
                 ring = AudioRingBuffer(window_in)
-                prev_tail: Optional[np.ndarray] = None
+                prev_last: Optional[float] = None
                 outs: list[np.ndarray] = []
                 drop_warmup_hops = bool(args.drop_warmup_hops)
 
@@ -290,8 +290,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
                     if ring.size < window_in:
                         warmup_hops += 1
-                        if fade_out > 0:
-                            prev_tail = np.zeros(fade_out, dtype=np.float32)
+                        prev_last = 0.0
                         if not drop_warmup_hops:
                             outs.append(np.zeros(hop_out, dtype=np.float32))
                         continue
@@ -367,10 +366,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                         )
                         out_hop = (out_hop * mask).astype(np.float32, copy=False)
 
-                    out_hop = crossfade_prefix_inplace(out_hop, prev_tail, fade_out)
+                    out_hop = smooth_boundary_inplace(out_hop, prev_last, fade_out)
                     out_hop = apply_peak_limiter(out_hop, peak_limit=float(args.peak_limit))
-                    if fade_out > 0:
-                        prev_tail = out_hop[-fade_out:].astype(np.float32, copy=True)
+                    prev_last = float(out_hop[-1]) if len(out_hop) else prev_last
 
                     outs.append(out_hop)
 
