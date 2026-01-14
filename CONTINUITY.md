@@ -162,12 +162,17 @@
   - Wrapper A/B (offline vs streaming) on Vast (FLEURS fr_fr dev 300 pairs, WER_MODE=audio_ref):
     - ClassicVC: offline WER≈0.345/ear≈0.602 vs streaming WER≈0.68; delta boundary smoothing improved streaming ear≈0.33→0.47 at the same latency (~228ms).
     - Chatterbox: offline WER≈0.495/ear≈0.615 vs streaming(mask+gain) WER≈0.615/ear≈0.638 (0/300 dropouts) but latency_p95_ms≈800ms => call_score_v1=0.
+- VC quest (2026-01-14):
+  - Wrapper verification hardening:
+    - Added robust hop-boundary glitch metric `glitch_boundary_flux_ratio_*` (spectral flux around hop boundaries) and new scores `call_score_v3` / `ear_score_v3`.
+    - Added streaming-path “full-window equivalence” sentinel mode (`window_ms=0`, `hop_ms=0`) to isolate wrapper-only degradation vs offline.
+    - Vast A/B: ClassicVC delta smoothing trivially zeros jump-ratio, but flux-ratio stays meaningful and shows improvement; Chatterbox remains very smooth at hop boundaries.
 - Now: VC quest: ClassicVC/MMCXLI remains the best call-latency candidate on FLEURS fr_fr; best validated streaming wrapper is w1600/h400 end + delta smoothing (ear_score_v2≈0.467, call_score_v1≈0.370, latency_p95_ms≈228). FreeVC remains lower intelligibility + frequent dropouts; Chatterbox remains the quality/stability reference but is ~0.8s latency at realtime config (`call_score_v1=0` under strict threshold). GPT-SoVITS, MNP-SVC, and FasterSVC rejected for French call-VC.
 - Next:
   - Continue scanning for new zero-shot call-VC competitors (e.g., Noro; see `docs/vc_quest.md` backlog).
   - Decide whether to adopt FreeVC gain/mask and rerun a full 300-pair evaluation for the best settings.
   - Add “worst cases” surfacing (case IDs/paths) for dropouts/glitches to speed subjective spot-checking.
-  - Improve glitch metrics so they stay meaningful even when boundary smoothing makes sample jumps ~0 by construction.
+  - (Optional) Calibrate `ear_score_v3` flux thresholds and/or tune ClassicVC fade/smoothing to reduce `glitch_boundary_flux_ratio_*` without harming WER.
   - Revisit Chatterbox call-latency only if we can reduce algorithmic delay or inference time without WER collapse; otherwise treat as hard-limited for call UX.
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).

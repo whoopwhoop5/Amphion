@@ -103,6 +103,36 @@ Takeaways:
 - **ClassicVC:** most of the gap is from the **streaming context limit** (offline WER≈0.345 vs stream WER≈0.68). Wrapper details still matter: switching from overlap crossfade to **delta boundary smoothing** improved scores (ear≈0.33 → 0.47) without changing latency.
 - **Chatterbox:** offline has better content preservation (WER≈0.495 vs stream WER≈0.615), but our streaming wrapper (mask+gain) is extremely stable (0/300 dropouts). Latency remains ~0.8s at this config, so it’s not call-latency under `call_score_v1`.
 
+### Robust hop-boundary glitch metric (v3)
+We added a hop-boundary glitch metric that can’t be trivially zeroed by boundary smoothing:
+- `glitch_boundary_flux_ratio_*`: short-time spectral flux around hop boundaries, normalized by the file’s typical (p95) flux.
+
+We also added new composite scores that use it:
+- `ear_score_v3` / `call_score_v3` (same structure as v2, but with a stronger hop-glitch term).
+
+Key results (FLEURS fr_fr dev, 300 pairs, WER_MODE=`audio_ref`):
+- **ClassicVC stream (no boundary smoothing):** `runs/vc_quest/playlists/fleurs_fr_fr/classicvc_stream_w1600_h400_end_full/summary_v3.json`
+  - glitch jump_ratio_p95 mean≈3.35, flux_ratio_p95 mean≈2.63, ear_score_v3 mean≈0.011
+- **ClassicVC stream + delta boundary smoothing:** `runs/vc_quest/playlists/fleurs_fr_fr/classicvc_stream_w1600_h400_end_delta_full/summary_v3.json`
+  - glitch jump_ratio_p95 mean≈0.0 (forced sample continuity), flux_ratio_p95 mean≈2.06, ear_score_v3 mean≈0.071
+- **Chatterbox stream (mask+gain + boundary smoothing):** `runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_w800_h400_s8_mask_gain5_full/summary_v3.json`
+  - flux_ratio_p95 mean≈1.16, ear_score_v3 mean≈0.473
+
+Takeaway: delta boundary smoothing is still the best wrapper choice for ClassicVC, but the flux metric shows ClassicVC’s hop boundaries remain more “spectrally glitchy” than Chatterbox.
+
+### Streaming-path “full-window equivalence” sanity check
+To isolate wrapper-only degradation (vs chunking/context limits), we added `window_ms=0` and `hop_ms=0` as a sentinel meaning “use full utterance length (no chunking/padding)”, while still going through the streaming code path.
+
+Smoke results (MAX_PAIRS=50, WER_MODE=`audio_ref`):
+- **ClassicVC:** streaming-path full-window is *not worse* than offline on this subset:
+  - Stream-equiv: `runs/vc_quest/playlists/fleurs_fr_fr/classicvc_stream_equiv_fullwindow_smoke50/summary.json` (ear≈0.721, WER≈0.286)
+  - Offline: `runs/vc_quest/playlists/fleurs_fr_fr/classicvc_offline_smoke50/summary_v3.json` (ear≈0.611, WER≈0.308)
+- **Chatterbox:** streaming-path full-window is close to offline (same stability issues when mask/gain are off):
+  - Stream-equiv: `runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_stream_equiv_fullwindow_smoke50/summary.json` (ear≈0.514, WER≈0.447, dropouts 7/50)
+  - Offline: `runs/vc_quest/playlists/fleurs_fr_fr/chatterbox_offline_smoke50/summary_v3.json` (ear≈0.574, WER≈0.499, dropouts 6/50)
+
+Takeaway: the streaming wrappers themselves aren’t the main source of quality loss; most loss comes from reduced context in true chunkwise streaming (and model behavior under that constraint).
+
 ## Baseline (Vevo)
 - Model: Amphion Vevo `vevotimbre`
 - Current best live-like config (RTX 4090): `window_ms=2000`, `hop_ms=500`, `flow_matching_steps=6`, `fade_ms=10`
