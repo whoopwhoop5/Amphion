@@ -62,6 +62,7 @@ python -m pip install -U \
   "librosa==0.10.2" \
   "tqdm" \
   "einops==0.8.0" \
+  "vector-quantize-pytorch" \
   "munch==4.0.0" \
   "transformers==4.46.3" \
   "descript-audio-codec==1.0.0" \
