@@ -233,7 +233,10 @@ def _process_one_chunk(
     if int(wrapper.delay) > 0 and int(wrapper.src_content_codes.size(-1)) < int(wrapper.delay):
         return torch.zeros_like(src_wav_chunk)
     if int(wrapper.delay) > 0 and (not bool(wrapper.src_condition4delay_prefilled)):
-        wrapper.model.prefill_src_condition4delay(wrapper.src_content_codes[:, -int(wrapper.delay) :])
+        with autocast_ctx:
+            wrapper.model.prefill_src_condition4delay(
+                wrapper.src_content_codes[:, -int(wrapper.delay) :]
+            )
         wrapper.src_condition4delay_prefilled = True
         return torch.zeros_like(src_wav_chunk)
 
