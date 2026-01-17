@@ -13,6 +13,7 @@ Single “user pair” is useful for fast iteration, but it can overfit. For a s
 - Build playlist (downloads from HF, writes under `data/`): `bash scripts/vc_quest/fleurs_fr_build_playlist.sh`
 - Run + score FreeVC on the playlist (RTX 4090): `bash scripts/vc_quest/freevc_run_fleurs_fr_playlist_gpu.sh`
 - Run + score ChatterboxVC on the playlist (RTX 4090): `bash scripts/vc_quest/chatterbox_run_fleurs_fr_playlist_gpu.sh`
+- Run + score StreamVoiceAnon on the playlist (RTX 4090): `bash scripts/vc_quest/streamvoiceanon_run_fleurs_fr_playlist_gpu.sh`
 
 ## Presets (recommended)
 These wrappers pin the best *validated* configs from our vc_quest evals and run the French playlist.
@@ -23,6 +24,8 @@ They are meant to be the “known good” starting points.
 - **ClassicVC/MMCXLI (quality-first, still call-usable):** `bash scripts/vc_quest/presets/classicvc_fleurs_fr_quality.sh`
 - **ClassicVC/MMCXLI (call-latency-first):** `bash scripts/vc_quest/presets/classicvc_fleurs_fr_call_latency.sh`
 - **ChatterboxVC (quality/stability reference):** `bash scripts/vc_quest/presets/chatterbox_fleurs_fr_quality.sh`
+- Experimental (not recommended):
+  - **StreamVoiceAnon** (very fast but currently fails dropouts): `bash scripts/vc_quest/presets/streamvoiceanon_fleurs_fr_default.sh`
 
 Tips:
 - Use `MAX_PAIRS=50` for smoke tests (defaults to full `0`).
@@ -69,6 +72,10 @@ Latest results (Vast RTX 4090, WER_MODE=`audio_ref`, Whisper `base` language=`fr
     - WER mean≈1.109, S-SIM(target) mean≈0.699, silence leakage is very loud (silent_out_db_p95 mean≈-15dB)
   - Same mixed playlist baseline for comparison: ClassicVC is strong (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_on_fleurs_to_libritts_s6209_w1600_h400_end/summary.json`): call_score_v1 mean≈0.266, WER mean≈0.563, S-SIM(target) mean≈0.754
   - Conclusion: RVC is **not competitive** for French call VC in our setup; likely reject unless we swap to a more multilingual content encoder and add stronger silence gating.
+- **StreamVoiceAnon** (Plachtaa, `runs/vc_quest/playlists/fleurs_fr_fr/streamvoiceanon_full_d2_c1_e128_d64_compile/summary.json`)
+  - latency_p95_ms mean≈132, rtf_p95 mean≈0.358 (very fast)
+  - WER mean≈0.698, S-SIM(target) mean≈0.913
+  - Fails artifacts badly: dropout (`dropout>0.01`): 286/300 ⇒ call_score_v1 mean≈0.004, ear_score_v2 mean≈0.002
 
 ### macOS vs RTX 4090 performance (smoke)
 These are *device* benchmarks (not full leaderboard runs). They help answer “can this run locally on a Mac?”
@@ -613,6 +620,21 @@ Not actionable yet (paper/demo only or no public checkpoints):
   - latency_p95_ms mean≈250, rtf_p95 mean≈0.124
   - WER mean≈1.021, S-SIM(target) mean≈0.694, dropout mean≈0.027
 - Conclusion: despite strong speed, FasterSVC outputs are not ASR-intelligible on our French benchmark and speaker similarity is low → reject.
+
+### 24) StreamVoiceAnon (Plachtaa/StreamVoiceAnon)
+- Bead: `Amphion-ehh.31`
+- Status: evaluated (likely reject)
+- Implementation: `evaluation/vc_quest/streamvoiceanon_playlist_convert.py`, `scripts/vc_quest/streamvoiceanon_*`, `scripts/vc_quest/presets/streamvoiceanon_fleurs_fr_default.sh`
+- Artifacts (Vast):
+  - Full run (300): `runs/vc_quest/playlists/fleurs_fr_fr/streamvoiceanon_full_d2_c1_e128_d64_compile/summary.json`
+  - Smoke (2): `runs/vc_quest/playlists/fleurs_fr_fr/streamvoiceanon_smoke2_compile/summary.json`
+- Notes:
+  - StreamVoiceAnon is only real-time in our setup with Torch compilation enabled (otherwise RTF regresses badly).
+- Results (Vast RTX 4090, FLEURS fr_fr dev, full 300 pairs, `emit_align=center`, WER_MODE=`audio_ref`):
+  - latency_p95_ms mean≈132, rtf_p95 mean≈0.358 (excellent)
+  - WER mean≈0.698, S-SIM(target) mean≈0.913
+  - Major issue: voiced dropouts are extremely frequent (dropout gate `dropout>0.01`: 286/300) ⇒ call_score_v1 mean≈0.004, ear_score_v2 mean≈0.002
+- Conclusion: speed/latency are excellent, but quality/stability (voiced dropouts) is not competitive on our French benchmark → likely reject unless we can eliminate dropouts via tuning.
 
 ## What we record for each candidate
 - **Streaming config:** sample rate, chunk/window, hop, crossfade/OLA, VAD settings, any lookahead.

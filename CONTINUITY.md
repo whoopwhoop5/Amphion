@@ -167,7 +167,9 @@
     - Added robust hop-boundary glitch metric `glitch_boundary_flux_ratio_*` (spectral flux around hop boundaries) and new scores `call_score_v3` / `ear_score_v3`.
     - Added streaming-path “full-window equivalence” sentinel mode (`window_ms=0`, `hop_ms=0`) to isolate wrapper-only degradation vs offline.
     - Vast A/B: ClassicVC delta smoothing trivially zeros jump-ratio, but flux-ratio stays meaningful and shows improvement; Chatterbox remains very smooth at hop boundaries.
-- Now: VC quest: ClassicVC/MMCXLI remains the best call-latency candidate on FLEURS fr_fr; best validated streaming wrapper is w1600/h400 end + delta smoothing (ear_score_v2≈0.467, call_score_v1≈0.370, latency_p95_ms≈228). FreeVC remains lower intelligibility + frequent dropouts; Chatterbox remains the quality/stability reference but is ~0.8s latency at realtime config (`call_score_v1=0` under strict threshold). GPT-SoVITS, MNP-SVC, and FasterSVC rejected for French call-VC.
+- VC quest (2026-01-17):
+  - Evaluated StreamVoiceAnon (Plachtaa) on FLEURS fr_fr playlist (300 pairs, compile enabled): very fast (latency_p95_ms≈132, rtf_p95≈0.36) but fails dropout gates badly (dropout>0.01: 286/300) => call_score_v1≈0.004, ear_score_v2≈0.002; likely reject.
+- Now: VC quest: ClassicVC/MMCXLI remains the best call-latency candidate on FLEURS fr_fr; best validated streaming wrapper is w1600/h400 end + delta smoothing (ear_score_v2≈0.467, call_score_v1≈0.370, latency_p95_ms≈228). FreeVC remains lower intelligibility + frequent dropouts; Chatterbox remains the quality/stability reference but is ~0.8s latency at realtime config (`call_score_v1=0` under strict threshold). GPT-SoVITS, MNP-SVC, FasterSVC, and StreamVoiceAnon rejected for French call-VC.
 - Next:
   - Continue scanning for new zero-shot call-VC competitors (e.g., Noro; see `docs/vc_quest.md` backlog).
   - Decide whether to adopt FreeVC gain/mask and rerun a full 300-pair evaluation for the best settings.
