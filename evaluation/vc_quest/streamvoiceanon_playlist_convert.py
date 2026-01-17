@@ -62,6 +62,11 @@ def _purge_import_cache(prefix: str) -> None:
             del sys.modules[name]
 
 
+def _remove_sys_path_entry(path: str) -> None:
+    while path in sys.path:
+        sys.path.remove(path)
+
+
 @contextlib.contextmanager
 def _pushd(path: str):
     prev = os.getcwd()
@@ -97,6 +102,9 @@ def _load_inference_wrapper(streamvoiceanon_dir: str):
 
     # StreamVoiceAnon defines a top-level `modules/` package that can conflict with Amphion's
     # `modules/`. Ensure StreamVoiceAnon is first on sys.path and purge `modules` imports.
+    amphion_root = str(Path(__file__).resolve().parents[2])
+    _remove_sys_path_entry("")
+    _remove_sys_path_entry(amphion_root)
     _add_sys_path_first(str(root))
     _purge_import_cache("modules")
 
