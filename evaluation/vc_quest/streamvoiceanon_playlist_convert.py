@@ -73,6 +73,23 @@ def _pushd(path: str):
 
 
 def _load_inference_wrapper(streamvoiceanon_dir: str):
+    # StreamVoiceAnon assumes `torch._inductor.config` is available as an attribute.
+    # In Torch 2.4, it exists as a submodule but isn't re-exported from `torch._inductor`.
+    try:
+        import torch  # type: ignore
+
+        try:
+            import torch._inductor  # type: ignore
+
+            if not hasattr(torch._inductor, "config"):
+                import torch._inductor.config as _inductor_config  # type: ignore
+
+                torch._inductor.config = _inductor_config  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    except Exception:
+        pass
+
     root = Path(streamvoiceanon_dir).resolve()
     infer_py = root / "evaluations" / "infer_arvc.py"
     if not infer_py.is_file():
