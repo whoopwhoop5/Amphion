@@ -366,13 +366,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         raise FileNotFoundError(f"Missing checkpoint_path: {checkpoint_path}")
 
     # Instantiate once; reuse across all pairs.
-    wrapper = InferenceWrapper(
-        str(config_path),
-        str(checkpoint_path),
-        compile_ar=bool(args.compile_ar),
-        compile_encoder=bool(args.compile_encoder),
-        compile_decoder=bool(args.compile_decoder),
-    )
+    with _pushd(str(root)):
+        wrapper = InferenceWrapper(
+            str(config_path),
+            str(checkpoint_path),
+            compile_ar=bool(args.compile_ar),
+            compile_encoder=bool(args.compile_encoder),
+            compile_decoder=bool(args.compile_decoder),
+        )
     wrapper.device = device
     wrapper.model.to(device)
     wrapper.speech_tokenizer.to(device)
