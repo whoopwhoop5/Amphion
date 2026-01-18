@@ -131,6 +131,9 @@ class RunConfig:
     seed: int
     checkpoint_path: str
     config_path: str
+    hf_repo: str
+    hf_checkpoint_name: str
+    hf_config_name: str
     fp16: bool
     length_adjust: float
     diffusion_steps: int
@@ -171,6 +174,9 @@ def _load_seedvc_models(
     checkpoint_path: str,
     config_path: str,
     fp16: bool,
+    hf_repo: str,
+    hf_checkpoint_name: str,
+    hf_config_name: str,
 ) -> SeedVCModelSet:
     import torch
     import yaml
@@ -196,9 +202,9 @@ def _load_seedvc_models(
 
         if not checkpoint_path:
             checkpoint_path, config_path = load_custom_model_from_hf(
-                "Plachta/Seed-VC",
-                "DiT_uvit_tat_xlsr_ema.pth",
-                "config_dit_mel_seed_uvit_xlsr_tiny.yml",
+                str(hf_repo),
+                str(hf_checkpoint_name),
+                str(hf_config_name),
             )
         elif not config_path:
             raise ValueError("config_path must be provided when checkpoint_path is set.")
@@ -287,6 +293,32 @@ def _load_seedvc_models(
                     if fp16 and device.type != "cpu":
                         x = x.half()
                     out = wav2vec(x)
+                return out.last_hidden_state.float()
+
+        elif tok_type == "whisper":
+            from transformers import WhisperFeatureExtractor, WhisperModel  # type: ignore[import-not-found]
+
+            name = str(cfg["model_params"]["speech_tokenizer"]["name"])
+            extractor = WhisperFeatureExtractor.from_pretrained(name)
+            whisper = WhisperModel.from_pretrained(name)
+            whisper.eval().to(device)
+            if fp16 and device.type != "cpu":
+                whisper.half()
+
+            def semantic_fn(waves_16k: torch.Tensor) -> torch.Tensor:
+                waves_16k = waves_16k.float()
+                inp_list = [waves_16k[b].detach().cpu().numpy() for b in range(len(waves_16k))]
+                inputs = extractor(
+                    inp_list,
+                    return_tensors="pt",
+                    padding=True,
+                    sampling_rate=16000,
+                ).to(device)
+                x = inputs.input_features
+                if fp16 and device.type != "cpu":
+                    x = x.half()
+                with torch.no_grad():
+                    out = whisper.encoder(x)
                 return out.last_hidden_state.float()
 
         else:
@@ -708,6 +740,19 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     parser.add_argument("--checkpoint_path", type=str, default="", help="Optional checkpoint (else downloads xlsr-tiny).")
     parser.add_argument("--config_path", type=str, default="", help="Optional config (required if checkpoint_path set).")
+    parser.add_argument("--hf_repo", type=str, default="Plachta/Seed-VC", help="HF repo for default checkpoint/config.")
+    parser.add_argument(
+        "--hf_checkpoint_name",
+        type=str,
+        default="DiT_uvit_tat_xlsr_ema.pth",
+        help="HF checkpoint filename to download when checkpoint_path is empty.",
+    )
+    parser.add_argument(
+        "--hf_config_name",
+        type=str,
+        default="config_dit_mel_seed_uvit_xlsr_tiny.yml",
+        help="HF config filename to download when checkpoint_path is empty.",
+    )
 
     parser.add_argument("--ref", type=str, required=True, help="Target/reference voice audio")
     parser.add_argument("--src", type=str, required=True, help="Source audio to convert")
@@ -760,6 +805,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         checkpoint_path=str(args.checkpoint_path),
         config_path=str(args.config_path),
         fp16=bool(args.fp16),
+        hf_repo=str(args.hf_repo),
+        hf_checkpoint_name=str(args.hf_checkpoint_name),
+        hf_config_name=str(args.hf_config_name),
     )
 
     sr = int(model_set.sr)
@@ -922,6 +970,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             seed=int(args.seed),
             checkpoint_path=str(args.checkpoint_path),
             config_path=str(args.config_path),
+            hf_repo=str(args.hf_repo),
+            hf_checkpoint_name=str(args.hf_checkpoint_name),
+            hf_config_name=str(args.hf_config_name),
             fp16=bool(args.fp16),
             length_adjust=float(args.length_adjust),
             diffusion_steps=int(args.diffusion_steps),

@@ -64,6 +64,28 @@ load_custom_model_from_hf(
     "DiT_uvit_tat_xlsr_ema.pth",
     "config_dit_mel_seed_uvit_xlsr_tiny.yml",
 )
+load_custom_model_from_hf(
+    "Plachta/Seed-VC",
+    "DiT_seed_v2_uvit_whisper_small_wavenet_bigvgan_pruned.pth",
+    "config_dit_mel_seed_uvit_whisper_small_wavenet.yml",
+)
+load_custom_model_from_hf(
+    "Plachta/Seed-VC",
+    "DiT_seed_v2_uvit_whisper_base_f0_44k_bigvgan_pruned_ema.pth",
+    "config_dit_mel_seed_uvit_whisper_base_f0_44k.yml",
+)
+load_custom_model_from_hf(
+    "Plachta/Seed-VC",
+    "DiT_seed_v2_uvit_whisper_base_f0_44k_bigvgan_pruned_ft_ema.pth",
+    "config_dit_mel_seed_uvit_whisper_base_f0_44k.yml",
+)
+load_custom_model_from_hf(
+    "Plachta/Seed-VC",
+    "DiT_seed_v2_uvit_whisper_base_f0_44k_bigvgan_pruned_ft_ema_v2.pth",
+    "config_dit_mel_seed_uvit_whisper_base_f0_44k.yml",
+)
+load_custom_model_from_hf("Plachta/Seed-VC", "v2/ar_base.pth", None)
+load_custom_model_from_hf("Plachta/Seed-VC", "v2/cfm_small.pth", None)
 load_custom_model_from_hf("funasr/campplus", "campplus_cn_common.bin", None)
 load_custom_model_from_hf("FunAudioLLM/CosyVoice-300M", "hift.pt", None)
 print("[seedvc_setup] OK: core checkpoints")
@@ -76,6 +98,16 @@ from transformers import Wav2Vec2FeatureExtractor, Wav2Vec2Model
 name = "facebook/wav2vec2-xls-r-300m"
 _ = Wav2Vec2FeatureExtractor.from_pretrained(name)
 _ = Wav2Vec2Model.from_pretrained(name)
+print(f"[seedvc_setup] OK: {name}")
+PY
+
+echo "[seedvc_setup] Pre-downloading Whisper tokenizer/encoder (transformers cache)..."
+python - <<'PY'
+from transformers import WhisperFeatureExtractor, WhisperModel
+
+name = "openai/whisper-small"
+_ = WhisperFeatureExtractor.from_pretrained(name)
+_ = WhisperModel.from_pretrained(name)
 print(f"[seedvc_setup] OK: {name}")
 PY
 
