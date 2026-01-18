@@ -158,6 +158,8 @@
     - ClassicVC w800/h400 end: rtf_p95≈0.82, latency_p95_ms≈529 (borderline on Mac CPU; quality drops).
     - Chatterbox w800/h400 center s8: rtf_p95≈1.99, latency_p95_ms≈1196 (not realtime on Mac MPS).
   - Made vc_quest ClassicVC/Chatterbox setup + playlist runner scripts portable on macOS (conda base autodetect, HF_HOME reuse, numpy<2 for ClassicVC onnxruntime compat).
+- VC quest (2026-01-18):
+  - Added local real-time ClassicVC mic→speaker runner with selectable input/output devices: `python -m models.vc.classicvc.live_local` (uses `sounddevice`).
 - VC quest (2026-01-14):
   - Wrapper A/B (offline vs streaming) on Vast (FLEURS fr_fr dev 300 pairs, WER_MODE=audio_ref):
     - ClassicVC: offline WER≈0.345/ear≈0.602 vs streaming WER≈0.68; delta boundary smoothing improved streaming ear≈0.33→0.47 at the same latency (~228ms).
