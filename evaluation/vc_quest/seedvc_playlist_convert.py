@@ -183,7 +183,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    manifest = load_vc_playlist_manifest(str(args.manifest))
+    manifest = load_vc_playlist_manifest(str(args.manifest)).resolve_paths(str(args.manifest))
+    sources = manifest.sources_by_id()
+    targets = manifest.targets_by_id()
 
     out_dir = Path(args.out_dir)
     wav_dir = out_dir / "wavs"
@@ -221,8 +223,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     ref_cache: dict[str, np.ndarray] = {}
 
     for pair_idx, pair in enumerate(pairs):
-        s = manifest.sources[pair.source_id]
-        t = manifest.targets[pair.target_id]
+        s = sources[pair.source_id]
+        t = targets[pair.target_id]
         cid = _case_id(pair.source_id, pair.target_id)
 
         out_wav = wav_dir / f"{cid}.wav"
