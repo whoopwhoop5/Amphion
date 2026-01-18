@@ -14,6 +14,13 @@ SEEDVC_DIR="${DEPS_DIR}/seed-vc"
 
 mkdir -p "${DEPS_DIR}"
 
+# Vast images often set HF_HOME=/workspace/.hf_home (20GB disk, frequently full).
+# Override to a larger path on the container overlay FS.
+if [[ -z "${HF_HOME:-}" || "${HF_HOME}" == /workspace/* ]]; then
+  export HF_HOME="${HOME}/.hf_home"
+fi
+mkdir -p "${HF_HOME}"
+
 if [[ ! -x "${CONDA_BIN}" ]]; then
   echo "[seedvc_setup] Missing conda at ${CONDA_BIN}" >&2
   exit 1

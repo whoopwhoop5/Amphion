@@ -74,6 +74,13 @@ PEAK_LIMIT="${PEAK_LIMIT:-0.99}"
 MAX_PAIRS="${MAX_PAIRS:-0}"
 WER_MODE="${WER_MODE:-audio_ref}"
 
+# Vast images often set HF_HOME=/workspace/.hf_home (20GB disk, frequently full).
+# Override to a larger path on the container overlay FS.
+if [[ -z "${HF_HOME:-}" || "${HF_HOME}" == /workspace/* ]]; then
+  export HF_HOME="${HOME}/.hf_home"
+fi
+mkdir -p "${HF_HOME}"
+
 # 1) Ensure playlist exists (build in current python env; uses HF downloads).
 if [[ ! -f "${MANIFEST}" ]]; then
   scripts/vc_quest/fleurs_fr_build_playlist.sh
@@ -164,4 +171,3 @@ python -m evaluation.vc_quest.score_playlist \
   "${SCORE_ARGS[@]+"${SCORE_ARGS[@]}"}"
 
 echo "[seedvc_run_fleurs_fr_playlist] Wrote ${RUN_DIR}/summary.json"
-
