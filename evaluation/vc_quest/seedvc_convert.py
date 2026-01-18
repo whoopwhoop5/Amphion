@@ -306,6 +306,8 @@ def _load_seedvc_models(
                 whisper.half()
 
             def semantic_fn(waves_16k: torch.Tensor) -> torch.Tensor:
+                import torch.nn.functional as F
+
                 waves_16k = waves_16k.float()
                 inp_list = [waves_16k[b].detach().cpu().numpy() for b in range(len(waves_16k))]
                 inputs = extractor(
@@ -315,6 +317,12 @@ def _load_seedvc_models(
                     sampling_rate=16000,
                 ).to(device)
                 x = inputs.input_features
+                # Whisper expects a fixed 30s (3000 frames) mel length.
+                # Pad/truncate to match.
+                if int(x.size(-1)) < 3000:
+                    x = F.pad(x, (0, int(3000 - x.size(-1))))
+                elif int(x.size(-1)) > 3000:
+                    x = x[..., :3000]
                 if fp16 and device.type != "cpu":
                     x = x.half()
                 with torch.no_grad():
