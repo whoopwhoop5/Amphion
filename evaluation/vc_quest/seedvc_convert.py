@@ -330,8 +330,10 @@ def _load_seedvc_models(
             "hop_size": int(cfg["preprocess_params"]["spect_params"]["hop_length"]),
             "num_mels": int(cfg["preprocess_params"]["spect_params"]["n_mels"]),
             "sampling_rate": int(sr),
-            "fmin": float(cfg["preprocess_params"]["spect_params"].get("fmin", 0.0)),
-            "fmax": float(cfg["preprocess_params"]["spect_params"].get("fmax", 8000.0)),
+            "fmin": float(cfg["preprocess_params"]["spect_params"].get("fmin", 0.0) or 0.0),
+            "fmax": float(sr) / 2.0
+            if (cfg["preprocess_params"]["spect_params"].get("fmax") in (None, "None", "null", ""))
+            else float(cfg["preprocess_params"]["spect_params"].get("fmax", float(sr) / 2.0)),
             "center": False,
         }
 
