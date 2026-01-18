@@ -54,7 +54,7 @@ conda activate "${ENV_NAME}"
 
 python -m pip install -U pip setuptools wheel
 
-python -m pip install -U "numpy<2" scipy soundfile librosa tqdm huggingface_hub pyyaml
+python -m pip install -U "numpy<2" scipy soundfile librosa tqdm huggingface_hub pyyaml sounddevice
 if ! python -m pip install -U webrtcvad; then
   echo "[classicvc_setup] WARN: webrtcvad install failed; VAD_MODE=webrtc will not be available" >&2
 fi

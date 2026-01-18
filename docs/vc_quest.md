@@ -31,6 +31,30 @@ Tips:
 - Use `MAX_PAIRS=50` for smoke tests (defaults to full `0`).
 - Results go to `runs/vc_quest/playlists/fleurs_fr_fr/${RUN_NAME}/`.
 
+### Live local (macOS): ClassicVC mic → speakers
+You can run ClassicVC in a real-time loop locally (selectable input/output devices):
+
+```bash
+# One-time setup (creates conda env `classicvc`, clones MMCXLI, downloads weights)
+bash scripts/vc_quest/classicvc_setup_gpu.sh
+
+source /opt/miniforge3/etc/profile.d/conda.sh
+conda activate classicvc
+
+# List devices (use the index numbers for --input_device/--output_device)
+python -m models.vc.classicvc.live_local --list_devices
+
+python -m models.vc.classicvc.live_local \
+  --mmcxli_dir ~/deps/mmcxli \
+  --ref /path/to/target_reference.wav \
+  --input_device 1 \
+  --output_device 3 \
+  --io_sample_rate 48000 \
+  --window_ms 800 \
+  --hop_ms 400 \
+  --emit_align end
+```
+
 Outputs:
 - Playlist manifest: `data/vc_quest_playlists/fleurs_fr_fr_dev_v1/manifest.json`
 - Run artifacts: `runs/vc_quest/playlists/fleurs_fr_fr/*/`
