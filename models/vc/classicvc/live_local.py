@@ -192,7 +192,95 @@ def _parse_device_arg(v: Optional[str]) -> Optional[object]:
         return None
     if s.isdigit():
         return int(s)
+    if s.lower() in {"default", "auto"}:
+        return None
     return s
+
+
+def _print_device_help(sd) -> None:  # noqa: ANN001
+    try:
+        devices = list(sd.query_devices())
+    except Exception as e:  # pragma: no cover
+        print(f"Failed to query devices: {e}")
+        return
+
+    try:
+        hostapis = list(sd.query_hostapis())
+    except Exception:
+        hostapis = []
+
+    hostapi_names: dict[int, str] = {}
+    for i, ha in enumerate(hostapis):
+        try:
+            hostapi_names[i] = str(ha.get("name", "")).strip()
+        except Exception:
+            hostapi_names[i] = ""
+
+    default_in: Optional[int] = None
+    default_out: Optional[int] = None
+    try:
+        default_in, default_out = sd.default.device  # type: ignore[misc]
+    except Exception:
+        pass
+
+    def fmt_line(idx: int, dev: dict, *, kind: str) -> str:
+        name = str(dev.get("name", "")).strip()
+        hostapi = hostapi_names.get(int(dev.get("hostapi", -1)), "").strip()
+        max_in = int(dev.get("max_input_channels", 0) or 0)
+        max_out = int(dev.get("max_output_channels", 0) or 0)
+        sr = dev.get("default_samplerate", None)
+        try:
+            sr_s = f"{int(round(float(sr)))}" if sr is not None else "?"
+        except Exception:
+            sr_s = "?"
+
+        mark = " "
+        if kind == "in" and default_in is not None and idx == int(default_in):
+            mark = ">"
+        if kind == "out" and default_out is not None and idx == int(default_out):
+            mark = "<"
+
+        caps = f"in={max_in} out={max_out} sr={sr_s}"
+        ha = f" [{hostapi}]" if hostapi else ""
+        return f"{mark} {idx:>3} {name}{ha} ({caps})"
+
+    inputs: list[str] = []
+    outputs: list[str] = []
+    duplex: list[str] = []
+
+    for idx, dev in enumerate(devices):
+        try:
+            max_in = int(dev.get("max_input_channels", 0) or 0)
+            max_out = int(dev.get("max_output_channels", 0) or 0)
+        except Exception:
+            continue
+
+        if max_in > 0:
+            inputs.append(fmt_line(idx, dev, kind="in"))
+        if max_out > 0:
+            outputs.append(fmt_line(idx, dev, kind="out"))
+        if max_in > 0 and max_out > 0:
+            duplex.append(fmt_line(idx, dev, kind="in"))
+
+    print("Input devices (use --input_device):")
+    if inputs:
+        print("\n".join(inputs))
+    else:
+        print("  (none)")
+
+    print("\nOutput devices (use --output_device):")
+    if outputs:
+        print("\n".join(outputs))
+    else:
+        print("  (none)")
+
+    if duplex:
+        print("\nDuplex devices (input+output):")
+        print("\n".join(duplex))
+
+    print("\nNotes:")
+    print("- Pass a device index (e.g. --input_device 4) or exact device name.")
+    print("- Use --input_device default / --output_device default (or omit) to use system defaults.")
 
 
 def _build_audio_efx(
@@ -298,7 +386,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         raise RuntimeError("Missing dependency: sounddevice. Install with `pip install sounddevice`.") from e
 
     if args.list_devices:
-        print(sd.query_devices())
+        _print_device_help(sd)
         return 0
 
     io_sr = int(args.io_sample_rate)
@@ -703,4 +791,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
