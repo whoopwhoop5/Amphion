@@ -160,6 +160,12 @@
   - Made vc_quest ClassicVC/Chatterbox setup + playlist runner scripts portable on macOS (conda base autodetect, HF_HOME reuse, numpy<2 for ClassicVC onnxruntime compat).
 - VC quest (2026-01-18):
   - Added local real-time ClassicVC mic→speaker runner with selectable input/output devices: `python -m models.vc.classicvc.live_local` (uses `sounddevice`).
+- VC quest (2026-01-19):
+  - Added local mic→speaker CLIs (selectable input/output devices) for FreeVC, ChatterboxVC, and Seed-VC:
+    - `python -m models.vc.freevc.live_local`
+    - `python -m models.vc.chatterbox.live_local`
+    - `python -m models.vc.seedvc.live_local`
+  - Added shared live audio helper: `models/vc/live_io.py` and documented in `docs/vc_quest.md`.
 - VC quest (2026-01-14):
   - Wrapper A/B (offline vs streaming) on Vast (FLEURS fr_fr dev 300 pairs, WER_MODE=audio_ref):
     - ClassicVC: offline WER≈0.345/ear≈0.602 vs streaming WER≈0.68; delta boundary smoothing improved streaming ear≈0.33→0.47 at the same latency (~228ms).

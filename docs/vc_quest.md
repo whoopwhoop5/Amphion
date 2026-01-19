@@ -55,6 +55,38 @@ python -m models.vc.classicvc.live_local \
   --emit_align end
 ```
 
+### Live local (macOS): FreeVC / ChatterboxVC / Seed-VC (experimental)
+These are **GPU-heavy** compared to ClassicVC/MMCXLI. On Apple Silicon they are usually **not real-time**, but the mic→speaker CLIs are useful for quick A/B listening:
+
+```bash
+# FreeVC
+python -m models.vc.freevc.live_local --list_devices
+python -m models.vc.freevc.live_local \
+  --freevc_dir ~/deps/FreeVC \
+  --ref /path/to/target_reference.wav \
+  --input_device 1 \
+  --output_device 3 \
+  --device mps
+
+# ChatterboxVC
+python -m models.vc.chatterbox.live_local --list_devices
+python -m models.vc.chatterbox.live_local \
+  --chatterbox_dir ~/deps/chatterbox \
+  --ref /path/to/target_reference.wav \
+  --input_device 1 \
+  --output_device 3 \
+  --device mps
+
+# Seed-VC (block-based streaming; has intrinsic algorithmic delay)
+python -m models.vc.seedvc.live_local --list_devices
+python -m models.vc.seedvc.live_local \
+  --seedvc_dir ~/deps/Seed-VC \
+  --ref /path/to/target_reference.wav \
+  --input_device 1 \
+  --output_device 3 \
+  --device mps
+```
+
 Outputs:
 - Playlist manifest: `data/vc_quest_playlists/fleurs_fr_fr_dev_v1/manifest.json`
 - Run artifacts: `runs/vc_quest/playlists/fleurs_fr_fr/*/`
