@@ -119,7 +119,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         if not args.ref:
             raise ValueError("--ref is required unless --passthrough")
 
-        import torch
+        try:
+            import torch
+        except Exception as e:  # pragma: no cover
+            raise RuntimeError(
+                "Missing dependency: torch. Install torch (and Seed-VC deps) first. "
+                "Note: Seed-VC is GPU-heavy; running live on macOS may not be real-time."
+            ) from e
 
         device = (
             torch.device(args.device)
@@ -338,4 +344,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

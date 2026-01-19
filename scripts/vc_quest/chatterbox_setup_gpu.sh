@@ -59,6 +59,19 @@ fi
 
 # VC-only deps (avoid pulling the full chatterbox-tts dependency set).
 python -m pip install -U "numpy>=1.24.0,<1.26.0" scipy soundfile librosa==0.11.0 tqdm
+
+# Live audio I/O deps (optional for offline eval; required for models.vc.chatterbox.live_local).
+if ! python - <<'PY' >/dev/null 2>&1
+import sounddevice  # noqa: F401
+PY
+then
+  if ! conda install -y -c conda-forge portaudio python-sounddevice; then
+    echo "[chatterbox_setup] WARN: conda-forge portaudio/python-sounddevice install failed; trying pip sounddevice" >&2
+    if ! python -m pip install -U sounddevice; then
+      echo "[chatterbox_setup] WARN: sounddevice install failed; live_local audio I/O may not work" >&2
+    fi
+  fi
+fi
 if ! python -m pip install -U webrtcvad; then
   echo "[chatterbox_setup] WARN: webrtcvad install failed; VAD_MODE=webrtc will not be available" >&2
 fi

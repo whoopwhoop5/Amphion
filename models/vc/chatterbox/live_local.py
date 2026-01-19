@@ -189,7 +189,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         if not args.ref:
             raise ValueError("--ref is required unless --passthrough")
 
-        import torch
+        try:
+            import torch
+        except Exception as e:  # pragma: no cover
+            raise RuntimeError(
+                "Missing dependency: torch. Install torch (and Chatterbox deps) first. "
+                "Recommended: `bash scripts/vc_quest/chatterbox_setup_gpu.sh` then `conda activate chatterbox`."
+            ) from e
 
         device = (
             torch.device(args.device)
@@ -447,4 +453,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

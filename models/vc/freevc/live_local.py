@@ -180,7 +180,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         logging.basicConfig(stream=sys.stdout, level=logging.WARNING)
         logging.getLogger("numba").setLevel(logging.WARNING)
 
-        import torch
+        try:
+            import torch
+        except Exception as e:  # pragma: no cover
+            raise RuntimeError(
+                "Missing dependency: torch. Install torch (and FreeVC deps) first. "
+                "On macOS: `python -m pip install -U torch torchaudio`."
+            ) from e
 
         device = (
             torch.device(args.device)
