@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import queue
 import threading
@@ -42,6 +43,88 @@ def _add_sys_path_first(path: str) -> None:
     if path in sys.path:
         sys.path.remove(path)
     sys.path.insert(0, path)
+
+
+class _HParams:
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            if isinstance(v, dict):
+                v = _HParams(**v)
+            self[k] = v
+
+    def keys(self):
+        return self.__dict__.keys()
+
+    def items(self):
+        return self.__dict__.items()
+
+    def values(self):
+        return self.__dict__.values()
+
+    def __len__(self):
+        return len(self.__dict__)
+
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def __setitem__(self, key, value):
+        return setattr(self, key, value)
+
+    def __contains__(self, key):
+        return key in self.__dict__
+
+    def __repr__(self):
+        return self.__dict__.__repr__()
+
+
+def _load_hparams_json(path: str) -> _HParams:
+    import json
+
+    cfg = json.loads(Path(path).read_text())
+    return _HParams(**cfg)
+
+
+def _load_torch_checkpoint(path: str, model) -> None:  # noqa: ANN001
+    import torch
+
+    checkpoint_dict = torch.load(str(path), map_location="cpu")
+    saved_state_dict = checkpoint_dict.get("model", checkpoint_dict)
+
+    state_dict = model.module.state_dict() if hasattr(model, "module") else model.state_dict()
+    new_state_dict = {}
+    for k, v in state_dict.items():
+        new_state_dict[k] = saved_state_dict.get(k, v)
+    if hasattr(model, "module"):
+        model.module.load_state_dict(new_state_dict)
+    else:
+        model.load_state_dict(new_state_dict)
+
+
+def _import_freevc_file(module_name: str, file_path: Path):  # noqa: ANN001
+    import sys
+
+    spec = importlib.util.spec_from_file_location(str(module_name), str(file_path))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Failed to load module spec for {module_name} from: {file_path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[str(module_name)] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _import_freevc_synthesizer_trn(freevc_dir: str):  # noqa: ANN001
+    root = Path(freevc_dir).resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(f"freevc_dir not found: {root}")
+
+    # FreeVC uses flat top-level modules like `commons.py` and `modules.py`, which conflict
+    # with Amphion's `modules/` package when we run as `python -m models.*`. Import FreeVC's
+    # versions explicitly first, then load `models.py` under a non-conflicting name.
+    _add_sys_path_first(str(root))
+    _ = _import_freevc_file("commons", root / "commons.py")
+    _ = _import_freevc_file("modules", root / "modules.py")
+    freevc_models = _import_freevc_file("_freevc_models", root / "models.py")
+    return freevc_models.SynthesizerTrn
 
 
 def _set_determinism(seed: int) -> None:
@@ -173,13 +256,6 @@ def main(argv: Optional[list[str]] = None) -> int:
         if not args.ref:
             raise ValueError("--ref is required unless --passthrough")
 
-        import logging
-        import sys
-
-        # Prevent FreeVC's `utils.py` from setting global DEBUG logging (which makes numba extremely noisy).
-        logging.basicConfig(stream=sys.stdout, level=logging.WARNING)
-        logging.getLogger("numba").setLevel(logging.WARNING)
-
         try:
             import torch
         except Exception as e:  # pragma: no cover
@@ -204,21 +280,24 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         _add_sys_path_first(freevc_dir)
 
+        SynthesizerTrn = _import_freevc_synthesizer_trn(freevc_dir)
         try:
-            import utils as freevc_utils  # type: ignore[import-not-found]
-            from mel_processing import mel_spectrogram_torch  # type: ignore[import-not-found]
-            from models import SynthesizerTrn  # type: ignore[import-not-found]
             from speaker_encoder.voice_encoder import (  # type: ignore[import-not-found]
                 SpeakerEncoder,
             )
             from transformers import WavLMModel  # type: ignore[import-not-found]
         except ModuleNotFoundError as e:  # pragma: no cover
-            if str(getattr(e, "name", "")) == "torchvision":
-                raise RuntimeError(
-                    "Missing dependency: torchvision (FreeVC imports it via utils.py). "
-                    "Install with `python -m pip install -U torchvision`."
-                ) from e
-            raise
+            raise RuntimeError(
+                f"Missing dependency: {getattr(e, 'name', 'unknown')}. "
+                "Re-run setup: `bash scripts/vc_quest/freevc_setup_gpu.sh`."
+            ) from e
+
+        mel_spectrogram_torch = None
+        try:
+            mel_mod = _import_freevc_file("_freevc_mel_processing", Path(freevc_dir) / "mel_processing.py")
+            mel_spectrogram_torch = getattr(mel_mod, "mel_spectrogram_torch", None)
+        except Exception:
+            mel_spectrogram_torch = None
 
         variant = str(args.variant)
         ckpt_name = {
@@ -244,7 +323,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             raise FileNotFoundError(f"Missing speaker encoder ckpt: {spk_ckpt}")
 
         print(f"[freevc_live_local] Loading {variant} from {cfg_path} + {ckpt_path}", flush=True)
-        hps = freevc_utils.get_hparams_from_file(str(cfg_path))
+        hps = _load_hparams_json(str(cfg_path))
 
         net_g = SynthesizerTrn(
             hps.data.filter_length // 2 + 1,
@@ -252,7 +331,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             **hps.model,
         ).to(device)
         net_g.eval()
-        freevc_utils.load_checkpoint(str(ckpt_path), net_g, None)
+        _load_torch_checkpoint(str(ckpt_path), net_g)
 
         smodel = SpeakerEncoder(str(spk_ckpt))
         cmodel = WavLMModel.from_pretrained(str(args.wavlm_model)).to(device)
@@ -286,6 +365,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             g_tgt = torch.from_numpy(np.asarray(g_np, dtype=np.float32)).unsqueeze(0).to(device)
             mel_tgt = None
         else:
+            if mel_spectrogram_torch is None:
+                raise RuntimeError(
+                    "FreeVC config requires mel conditioning (use_spk=false), but mel_processing.py could not be loaded."
+                )
             ref_t = torch.from_numpy(ref_16k).unsqueeze(0).to(device)
             mel_tgt = mel_spectrogram_torch(
                 ref_t,
