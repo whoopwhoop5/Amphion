@@ -204,11 +204,21 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         _add_sys_path_first(freevc_dir)
 
-        import utils as freevc_utils  # type: ignore[import-not-found]
-        from mel_processing import mel_spectrogram_torch  # type: ignore[import-not-found]
-        from models import SynthesizerTrn  # type: ignore[import-not-found]
-        from speaker_encoder.voice_encoder import SpeakerEncoder  # type: ignore[import-not-found]
-        from transformers import WavLMModel  # type: ignore[import-not-found]
+        try:
+            import utils as freevc_utils  # type: ignore[import-not-found]
+            from mel_processing import mel_spectrogram_torch  # type: ignore[import-not-found]
+            from models import SynthesizerTrn  # type: ignore[import-not-found]
+            from speaker_encoder.voice_encoder import (  # type: ignore[import-not-found]
+                SpeakerEncoder,
+            )
+            from transformers import WavLMModel  # type: ignore[import-not-found]
+        except ModuleNotFoundError as e:  # pragma: no cover
+            if str(getattr(e, "name", "")) == "torchvision":
+                raise RuntimeError(
+                    "Missing dependency: torchvision (FreeVC imports it via utils.py). "
+                    "Install with `python -m pip install -U torchvision`."
+                ) from e
+            raise
 
         variant = str(args.variant)
         ckpt_name = {

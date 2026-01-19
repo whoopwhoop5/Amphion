@@ -49,7 +49,7 @@ python -m pip install -U pip setuptools wheel
 
 # Torch: use CUDA wheels on GPU hosts; use default wheels on macOS.
 if [[ "$(uname)" == "Darwin" ]]; then
-  python -m pip install -U torch torchaudio
+  python -m pip install -U torch torchaudio torchvision
 else
   python -m pip install -U --index-url "${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu121}" torch torchaudio torchvision
 fi
