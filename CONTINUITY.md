@@ -166,6 +166,9 @@
     - `python -m models.vc.chatterbox.live_local`
     - `python -m models.vc.seedvc.live_local`
   - Added shared live audio helper: `models/vc/live_io.py` and documented in `docs/vc_quest.md`.
+- VC quest (2026-01-26):
+  - ClassicVC/MMCXLI: added `stream_backend=mmcxli_infer` using MMCXLI’s stateful realtime `AudioEfx.inference()` (vs our prior windowed `convert_offline()` streaming sim), plus per-utterance state reset for playlist eval.
+  - Meta now records `algo_delay_mid_ms`; vc_quest scorers prefer it when present for accurate latency scoring. Runner script accepts `STREAM_BACKEND`; added A/B preset: `scripts/vc_quest/presets/classicvc_fleurs_fr_quality_ab.sh`.
 - VC quest (2026-01-14):
   - Wrapper A/B (offline vs streaming) on Vast (FLEURS fr_fr dev 300 pairs, WER_MODE=audio_ref):
     - ClassicVC: offline WER≈0.345/ear≈0.602 vs streaming WER≈0.68; delta boundary smoothing improved streaming ear≈0.33→0.47 at the same latency (~228ms).
@@ -181,6 +184,7 @@
 - Next:
   - Continue scanning for new zero-shot call-VC competitors (e.g., Noro; see `docs/vc_quest.md` backlog).
   - Decide whether to adopt FreeVC gain/mask and rerun a full 300-pair evaluation for the best settings.
+  - Run full FLEURS fr_fr ClassicVC A/B (windowed vs `mmcxli_infer`) to confirm whether native MMCXLI streaming improves WER/flux/dropouts at the same hop/latency.
   - Add “worst cases” surfacing (case IDs/paths) for dropouts/glitches to speed subjective spot-checking.
   - (Optional) Calibrate `ear_score_v3` flux thresholds and/or tune ClassicVC fade/smoothing to reduce `glitch_boundary_flux_ratio_*` without harming WER.
   - Revisit Chatterbox call-latency only if we can reduce algorithmic delay or inference time without WER collapse; otherwise treat as hard-limited for call UX.
