@@ -616,9 +616,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                     sf.write(str(out_wav), out, out_sr)
 
                     if bool(args.drop_warmup_hops):
-                        delay_samples = int(int(warmup_hops) * int(hop_out) + int(extra_delay_samples))
+                        delay_samples = max(
+                            0,
+                            int(int(warmup_hops) * int(hop_out) - int(extra_delay_samples)),
+                        )
                     else:
-                        delay_samples = int(extra_delay_samples)
+                        delay_samples = 0
 
                 else:
                     raise ValueError(f"Unknown stream_backend: {stream_backend}")
