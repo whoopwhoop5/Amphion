@@ -38,6 +38,7 @@ class StreamConfig:
     fade_ms: int
     normalize_align: str
     emit_align: str
+    stream_backend: str
     drop_warmup_hops: bool
     vad_mode: str
     vad_db: float
@@ -253,6 +254,25 @@ def _compute_style_embedding(audio_efx, ref_wav_16k: np.ndarray) -> np.ndarray:
     return np.asarray(style, dtype=np.float32).reshape(1, -1)
 
 
+def _algo_delay_mid_ms(window_ms: int, hop_ms: int, emit_align: str) -> float:
+    window_ms = int(window_ms)
+    hop_ms = int(hop_ms)
+    if window_ms <= 0 or hop_ms <= 0:
+        return float("nan")
+
+    align = str(emit_align)
+    if align == "start":
+        emit_start = 0.0
+    elif align == "center":
+        emit_start = float(max(0, window_ms - hop_ms)) / 2.0
+    elif align == "end":
+        emit_start = float(max(0, window_ms - hop_ms))
+    else:
+        return float("nan")
+
+    return float(window_ms) - (emit_start + float(hop_ms) / 2.0)
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="ClassicVC/MMCXLI one-shot VC runner (offline or streaming simulation)."
@@ -314,6 +334,17 @@ def main(argv: Optional[list[str]] = None) -> int:
         type=int,
         default=400,
         help="Streaming hop size in ms. Use 0 to run one full-utterance hop (equivalence test).",
+    )
+    parser.add_argument(
+        "--stream_backend",
+        type=str,
+        default="windowed",
+        choices=["windowed", "mmcxli_infer"],
+        help=(
+            "Streaming implementation: "
+            "'windowed' re-runs convert_offline() on each sliding window; "
+            "'mmcxli_infer' uses MMCXLI's stateful AudioEfx.inference() realtime path."
+        ),
     )
     parser.add_argument("--fade_ms", type=int, default=10)
     parser.add_argument("--normalize_align", type=str, default="end", choices=["start", "end"])
@@ -387,6 +418,31 @@ def main(argv: Optional[list[str]] = None) -> int:
     in_sr = 16000
     out_sr = int(vc_cfg["backend"]["sr_decode"])
 
+    stream_backend = str(args.stream_backend)
+    use_mmcxli_infer = bool(args.stream) and stream_backend == "mmcxli_infer"
+    if use_mmcxli_infer:
+        if int(args.hop_ms) <= 0:
+            raise ValueError("--hop_ms must be > 0 for stream_backend=mmcxli_infer")
+        block_roll_size = int(round(float(args.hop_ms) / 20.0))
+        if block_roll_size <= 0:
+            raise ValueError("Derived block_roll_size must be > 0")
+        hop_ms_eff = int(block_roll_size * 20)
+        if abs(int(args.hop_ms) - hop_ms_eff) > 1:
+            raise ValueError(
+                f"mmcxli_infer requires hop_ms≈20ms*N; got hop_ms={int(args.hop_ms)} -> {hop_ms_eff}"
+            )
+        vc_cfg["backend"]["block_roll_size"] = int(block_roll_size)
+        if int(args.window_ms) > 0:
+            vc_cfg["len_proc"] = max(1, int(round(float(args.window_ms) / 20.0)))
+            vc_cfg["len_f0n_predictor"] = max(
+                int(vc_cfg.get("len_f0n_predictor", 0) or 0),
+                int(vc_cfg.get("len_proc", 0) or 0),
+            )
+            vc_cfg["len_content"] = max(
+                int(vc_cfg.get("len_content", 0) or 0),
+                int(vc_cfg.get("len_proc", 0) or 0),
+            )
+
     sc = _DummySoundControl(
         sr_out=out_sr,
         sr_proc=in_sr,
@@ -417,154 +473,296 @@ def main(argv: Optional[list[str]] = None) -> int:
         out = np.asarray(out, dtype=np.float32).reshape(-1)
         sf.write(args.out, out, out_sr)
     else:
-        # window_ms/hop_ms allow 0 as a sentinel meaning "use the full utterance length"
-        # (useful for streaming-vs-offline equivalence tests without padding).
-        if float(args.window_ms) > 0:
-            window_in = int(round(float(args.window_ms) / 1000.0 * float(in_sr)))
-        else:
-            window_in = int(len(src_16k))
-        if float(args.hop_ms) > 0:
-            hop_in = int(round(float(args.hop_ms) / 1000.0 * float(in_sr)))
-        else:
-            hop_in = int(window_in)
-        if window_in <= 0 or hop_in <= 0:
-            raise ValueError("window_ms and hop_ms must be > 0 (or 0 to use full utterance)")
-        if hop_in > window_in:
-            raise ValueError("hop_ms must be <= window_ms")
+        stream_backend = str(args.stream_backend)
+        if stream_backend == "windowed":
+            # window_ms/hop_ms allow 0 as a sentinel meaning "use the full utterance length"
+            # (useful for streaming-vs-offline equivalence tests without padding).
+            if float(args.window_ms) > 0:
+                window_in = int(round(float(args.window_ms) / 1000.0 * float(in_sr)))
+            else:
+                window_in = int(len(src_16k))
+            if float(args.hop_ms) > 0:
+                hop_in = int(round(float(args.hop_ms) / 1000.0 * float(in_sr)))
+            else:
+                hop_in = int(window_in)
+            if window_in <= 0 or hop_in <= 0:
+                raise ValueError("window_ms and hop_ms must be > 0 (or 0 to use full utterance)")
+            if hop_in > window_in:
+                raise ValueError("hop_ms must be <= window_ms")
 
-        if float(args.window_ms) > 0:
-            window_out = int(round(float(args.window_ms) / 1000.0 * float(out_sr)))
-        else:
-            window_out = int(round(float(window_in) * float(out_sr) / float(in_sr)))
-        if float(args.hop_ms) > 0:
-            hop_out = int(round(float(args.hop_ms) / 1000.0 * float(out_sr)))
-        else:
-            hop_out = int(round(float(hop_in) * float(out_sr) / float(in_sr)))
-        fade_out = int(round(float(args.fade_ms) / 1000.0 * float(out_sr)))
+            if float(args.window_ms) > 0:
+                window_out = int(round(float(args.window_ms) / 1000.0 * float(out_sr)))
+            else:
+                window_out = int(round(float(window_in) * float(out_sr) / float(in_sr)))
+            if float(args.hop_ms) > 0:
+                hop_out = int(round(float(args.hop_ms) / 1000.0 * float(out_sr)))
+            else:
+                hop_out = int(round(float(hop_in) * float(out_sr) / float(in_sr)))
+            fade_out = int(round(float(args.fade_ms) / 1000.0 * float(out_sr)))
 
-        if args.emit_align == "start":
-            emit_start_out = 0
-            emit_start_in = 0
-        elif args.emit_align == "center":
-            emit_start_out = max(0, (window_out - hop_out) // 2)
-            emit_start_in = max(0, (window_in - hop_in) // 2)
-        elif args.emit_align == "end":
-            emit_start_out = max(0, window_out - hop_out)
-            emit_start_in = max(0, window_in - hop_in)
-        else:
-            raise ValueError(f"Unknown emit_align: {args.emit_align}")
+            if args.emit_align == "start":
+                emit_start_out = 0
+                emit_start_in = 0
+            elif args.emit_align == "center":
+                emit_start_out = max(0, (window_out - hop_out) // 2)
+                emit_start_in = max(0, (window_in - hop_in) // 2)
+            elif args.emit_align == "end":
+                emit_start_out = max(0, window_out - hop_out)
+                emit_start_in = max(0, window_in - hop_in)
+            else:
+                raise ValueError(f"Unknown emit_align: {args.emit_align}")
 
-        ring = AudioRingBuffer(window_in)
-        prev_last: Optional[float] = None
-        outs: list[np.ndarray] = []
-        drop_warmup_hops = bool(args.drop_warmup_hops)
-        window_count = 0
+            ring = AudioRingBuffer(window_in)
+            prev_last: Optional[float] = None
+            outs: list[np.ndarray] = []
+            drop_warmup_hops = bool(args.drop_warmup_hops)
 
-        hop_ms_eff = float(args.hop_ms) if float(args.hop_ms) > 0 else (1000.0 * float(hop_in) / float(in_sr))
-        hangover_hops = int(np.ceil(float(args.vad_hangover_ms) / max(hop_ms_eff, 1e-6)))
-        hangover_left = 0
-        gain_db_state = 0.0
+            hop_ms_eff = (
+                float(args.hop_ms)
+                if float(args.hop_ms) > 0
+                else (1000.0 * float(hop_in) / float(in_sr))
+            )
+            hangover_hops = int(np.ceil(float(args.vad_hangover_ms) / max(hop_ms_eff, 1e-6)))
+            hangover_left = 0
+            gain_db_state = 0.0
 
-        for start in range(0, len(src_16k), hop_in):
-            hop = src_16k[start : start + hop_in]
-            if len(hop) < hop_in:
-                hop = np.pad(hop, (0, hop_in - len(hop)), mode="constant")
-            ring.write(hop)
+            for start in range(0, len(src_16k), hop_in):
+                hop = src_16k[start : start + hop_in]
+                if len(hop) < hop_in:
+                    hop = np.pad(hop, (0, hop_in - len(hop)), mode="constant")
+                ring.write(hop)
 
-            if ring.size < window_in:
-                warmup_hops += 1
-                prev_last = 0.0
-                if not drop_warmup_hops:
-                    outs.append(np.zeros(hop_out, dtype=np.float32))
-                continue
+                if ring.size < window_in:
+                    warmup_hops += 1
+                    prev_last = 0.0
+                    if not drop_warmup_hops:
+                        outs.append(np.zeros(hop_out, dtype=np.float32))
+                    continue
 
-            window = ring.read_last(window_in)
-            vad_segment = window[emit_start_in : emit_start_in + hop_in]
+                window = ring.read_last(window_in)
+                vad_segment = window[emit_start_in : emit_start_in + hop_in]
 
-            vad_mode = str(args.vad_mode)
-            silent_rms = bool(
-                float(args.vad_db) > -200.0
-                and is_silent_rms_db(
-                    vad_segment,
-                    sample_rate=in_sr,
-                    frame_ms=float(args.vad_frame_ms),
-                    silence_db=float(args.vad_db),
+                vad_mode = str(args.vad_mode)
+                silent_rms = bool(
+                    float(args.vad_db) > -200.0
+                    and is_silent_rms_db(
+                        vad_segment,
+                        sample_rate=in_sr,
+                        frame_ms=float(args.vad_frame_ms),
+                        silence_db=float(args.vad_db),
+                    )
                 )
+
+                if vad_mode == "off":
+                    voiced = True
+                elif vad_mode == "rms":
+                    voiced = not silent_rms
+                elif vad_mode == "webrtc":
+                    webrtc_voiced = is_voiced_webrtcvad(
+                        vad_segment,
+                        sample_rate=in_sr,
+                        frame_ms=int(args.vad_webrtc_frame_ms),  # type: ignore[arg-type]
+                        aggressiveness=int(args.vad_webrtc_aggressiveness),
+                        min_voiced_ratio=float(args.vad_webrtc_min_voiced_ratio),
+                    )
+                    voiced = bool(webrtc_voiced) and (not silent_rms)
+                else:
+                    raise ValueError(f"Unknown vad_mode: {vad_mode}")
+
+                if not voiced and hangover_left > 0 and (not silent_rms):
+                    voiced = True
+                    hangover_left -= 1
+                elif voiced:
+                    hangover_left = hangover_hops
+
+                if not voiced:
+                    out_hop = np.zeros(hop_out, dtype=np.float32)
+                else:
+                    t0 = time.time()
+                    out_window = audio_efx.convert_offline(window[None, :])
+                    timings.append(time.time() - t0)
+                    out_window = np.asarray(out_window, dtype=np.float32).reshape(-1)
+                    out_window = normalize_length(out_window, window_out, align=str(args.normalize_align))
+                    out_hop = out_window[emit_start_out : emit_start_out + hop_out].astype(np.float32, copy=False)
+
+                gain_mode = str(args.gain_mode)
+                if voiced and gain_mode == "match_src_rms":
+                    alpha = float(np.clip(float(args.gain_smoothing), 0.0, 0.999))
+                    src_db = rms_db(vad_segment, eps=1e-9)
+                    out_db = rms_db(out_hop, eps=1e-9)
+                    desired_boost_db = (src_db - out_db) - float(args.gain_target_delta_db)
+                    desired_boost_db = float(np.clip(desired_boost_db, 0.0, float(args.gain_max_boost_db)))
+                    gain_db_state = alpha * gain_db_state + (1.0 - alpha) * desired_boost_db
+                    gain = float(10.0 ** (gain_db_state / 20.0))
+                    out_hop = (out_hop * gain).astype(np.float32, copy=False)
+                elif not voiced:
+                    gain_db_state *= float(np.clip(float(args.gain_smoothing), 0.0, 0.999))
+
+                if str(args.mask_mode) == "rms":
+                    mask = build_rms_mask(
+                        vad_segment,
+                        in_sample_rate=in_sr,
+                        out_sample_rate=out_sr,
+                        out_len=hop_out,
+                        frame_ms=float(args.mask_frame_ms),
+                        threshold_db=float(args.mask_db),
+                        smooth_ms=float(args.mask_smooth_ms),
+                    )
+                    out_hop = (out_hop * mask).astype(np.float32, copy=False)
+
+                out_hop = smooth_boundary_inplace(out_hop, prev_last, fade_out)
+                out_hop = apply_peak_limiter(out_hop, peak_limit=float(args.peak_limit))
+                prev_last = float(out_hop[-1]) if len(out_hop) else prev_last
+
+                outs.append(out_hop)
+
+            out = np.concatenate(outs) if outs else np.zeros(0, dtype=np.float32)
+            sf.write(args.out, out, out_sr)
+
+            if bool(args.drop_warmup_hops):
+                delay_samples = int(
+                    int(warmup_hops) * int(hop_out)
+                    + (int(hop_out) - int(window_out))
+                    + int(emit_start_out)
+                )
+            else:
+                delay_samples = int(emit_start_out)
+
+        elif stream_backend == "mmcxli_infer":
+            hop_ms = int(args.hop_ms)
+            hop_out = int(round(float(hop_ms) / 1000.0 * float(out_sr)))
+            if hop_out <= 0:
+                raise ValueError("Derived hop_out must be > 0")
+            fade_out = int(round(float(args.fade_ms) / 1000.0 * float(out_sr)))
+
+            # Feed audio at the MMCXLI backend sample rate (sr_out == out_sr in our wrapper).
+            src_out = _resample_if_needed(src_16k, in_sr, out_sr)
+
+            warmup_target = (
+                max(0, int(np.ceil(float(args.window_ms) / max(float(hop_ms), 1e-6))) - 1)
+                if int(args.window_ms) > 0
+                else 0
             )
 
-            if vad_mode == "off":
-                voiced = True
-            elif vad_mode == "rms":
-                voiced = not silent_rms
-            elif vad_mode == "webrtc":
-                webrtc_voiced = is_voiced_webrtcvad(
-                    vad_segment,
-                    sample_rate=in_sr,
-                    frame_ms=int(args.vad_webrtc_frame_ms),  # type: ignore[arg-type]
-                    aggressiveness=int(args.vad_webrtc_aggressiveness),
-                    min_voiced_ratio=float(args.vad_webrtc_min_voiced_ratio),
-                )
-                voiced = bool(webrtc_voiced) and (not silent_rms)
-            else:
-                raise ValueError(f"Unknown vad_mode: {vad_mode}")
+            extra_delay_samples = int(vc_cfg.get("cross_fade_samples", 0) or 0) + int(
+                round(0.05 * float(out_sr))
+            )
 
-            if not voiced and hangover_left > 0 and (not silent_rms):
-                voiced = True
-                hangover_left -= 1
-            elif voiced:
-                hangover_left = hangover_hops
+            hop_in = int(round(float(hop_out) * float(in_sr) / float(out_sr)))
+            hop_in = max(1, hop_in)
 
-            if not voiced:
-                out_hop = np.zeros(hop_out, dtype=np.float32)
-            else:
+            prev_last: Optional[float] = None
+            outs = []
+            gain_db_state = 0.0
+
+            hop_ms_eff = 1000.0 * float(hop_out) / float(out_sr)
+            hangover_hops = int(np.ceil(float(args.vad_hangover_ms) / max(hop_ms_eff, 1e-6)))
+            hangover_left = 0
+
+            for hop_idx, start_out in enumerate(range(0, len(src_out), hop_out)):
+                block = src_out[start_out : start_out + hop_out]
+                if len(block) < hop_out:
+                    block = np.pad(block, (0, hop_out - len(block)), mode="constant")
+
+                start_in = int(round(float(start_out) * float(in_sr) / float(out_sr)))
+                vad_segment = src_16k[start_in : start_in + hop_in]
+                if len(vad_segment) < hop_in:
+                    vad_segment = np.pad(vad_segment, (0, hop_in - len(vad_segment)), mode="constant")
+
                 t0 = time.time()
-                out_window = audio_efx.convert_offline(window[None, :])
+                out_block = audio_efx.inference(block.reshape(-1, 1))
                 timings.append(time.time() - t0)
-                out_window = np.asarray(out_window, dtype=np.float32).reshape(-1)
-                out_window = normalize_length(out_window, window_out, align=str(args.normalize_align))
-                out_hop = out_window[emit_start_out : emit_start_out + hop_out].astype(np.float32, copy=False)
-
-            gain_mode = str(args.gain_mode)
-            if voiced and gain_mode == "match_src_rms":
-                alpha = float(np.clip(float(args.gain_smoothing), 0.0, 0.999))
-                src_db = rms_db(vad_segment, eps=1e-9)
-                out_db = rms_db(out_hop, eps=1e-9)
-                desired_boost_db = (src_db - out_db) - float(args.gain_target_delta_db)
-                desired_boost_db = float(np.clip(desired_boost_db, 0.0, float(args.gain_max_boost_db)))
-                gain_db_state = alpha * gain_db_state + (1.0 - alpha) * desired_boost_db
-                gain = float(10.0 ** (gain_db_state / 20.0))
-                out_hop = (out_hop * gain).astype(np.float32, copy=False)
-            elif not voiced:
-                gain_db_state *= float(np.clip(float(args.gain_smoothing), 0.0, 0.999))
-
-            if str(args.mask_mode) == "rms":
-                mask = build_rms_mask(
-                    vad_segment,
-                    in_sample_rate=in_sr,
-                    out_sample_rate=out_sr,
-                    out_len=hop_out,
-                    frame_ms=float(args.mask_frame_ms),
-                    threshold_db=float(args.mask_db),
-                    smooth_ms=float(args.mask_smooth_ms),
+                out_block = np.asarray(out_block, dtype=np.float32)
+                out_hop = (
+                    out_block[:, 0].reshape(-1)
+                    if out_block.ndim == 2
+                    else out_block.reshape(-1)
                 )
-                out_hop = (out_hop * mask).astype(np.float32, copy=False)
+                out_hop = normalize_length(out_hop, hop_out, align="end")
 
-            out_hop = smooth_boundary_inplace(out_hop, prev_last, fade_out)
-            out_hop = apply_peak_limiter(out_hop, peak_limit=float(args.peak_limit))
-            prev_last = float(out_hop[-1]) if len(out_hop) else prev_last
+                if hop_idx < warmup_target:
+                    warmup_hops += 1
+                    prev_last = 0.0
+                    if not bool(args.drop_warmup_hops):
+                        outs.append(np.zeros(hop_out, dtype=np.float32))
+                    continue
 
-            outs.append(out_hop)
-            window_count += 1
+                vad_mode = str(args.vad_mode)
+                silent_rms = bool(
+                    float(args.vad_db) > -200.0
+                    and is_silent_rms_db(
+                        vad_segment,
+                        sample_rate=in_sr,
+                        frame_ms=float(args.vad_frame_ms),
+                        silence_db=float(args.vad_db),
+                    )
+                )
 
-        out = np.concatenate(outs) if outs else np.zeros(0, dtype=np.float32)
-        sf.write(args.out, out, out_sr)
+                if vad_mode == "off":
+                    voiced = True
+                elif vad_mode == "rms":
+                    voiced = not silent_rms
+                elif vad_mode == "webrtc":
+                    webrtc_voiced = is_voiced_webrtcvad(
+                        vad_segment,
+                        sample_rate=in_sr,
+                        frame_ms=int(args.vad_webrtc_frame_ms),  # type: ignore[arg-type]
+                        aggressiveness=int(args.vad_webrtc_aggressiveness),
+                        min_voiced_ratio=float(args.vad_webrtc_min_voiced_ratio),
+                    )
+                    voiced = bool(webrtc_voiced) and (not silent_rms)
+                else:
+                    raise ValueError(f"Unknown vad_mode: {vad_mode}")
 
-        if bool(args.drop_warmup_hops):
-            delay_samples = int(
-                int(warmup_hops) * int(hop_out) + (int(hop_out) - int(window_out)) + int(emit_start_out)
-            )
+                if not voiced and hangover_left > 0 and (not silent_rms):
+                    voiced = True
+                    hangover_left -= 1
+                elif voiced:
+                    hangover_left = hangover_hops
+
+                if not voiced:
+                    out_hop = np.zeros(hop_out, dtype=np.float32)
+
+                gain_mode = str(args.gain_mode)
+                if voiced and gain_mode == "match_src_rms":
+                    alpha = float(np.clip(float(args.gain_smoothing), 0.0, 0.999))
+                    src_db = rms_db(vad_segment, eps=1e-9)
+                    out_db = rms_db(out_hop, eps=1e-9)
+                    desired_boost_db = (src_db - out_db) - float(args.gain_target_delta_db)
+                    desired_boost_db = float(np.clip(desired_boost_db, 0.0, float(args.gain_max_boost_db)))
+                    gain_db_state = alpha * gain_db_state + (1.0 - alpha) * desired_boost_db
+                    gain = float(10.0 ** (gain_db_state / 20.0))
+                    out_hop = (out_hop * gain).astype(np.float32, copy=False)
+                elif not voiced:
+                    gain_db_state *= float(np.clip(float(args.gain_smoothing), 0.0, 0.999))
+
+                if str(args.mask_mode) == "rms":
+                    mask = build_rms_mask(
+                        vad_segment,
+                        in_sample_rate=in_sr,
+                        out_sample_rate=out_sr,
+                        out_len=hop_out,
+                        frame_ms=float(args.mask_frame_ms),
+                        threshold_db=float(args.mask_db),
+                        smooth_ms=float(args.mask_smooth_ms),
+                    )
+                    out_hop = (out_hop * mask).astype(np.float32, copy=False)
+
+                out_hop = smooth_boundary_inplace(out_hop, prev_last, fade_out)
+                out_hop = apply_peak_limiter(out_hop, peak_limit=float(args.peak_limit))
+                prev_last = float(out_hop[-1]) if len(out_hop) else prev_last
+
+                outs.append(out_hop)
+
+            out = np.concatenate(outs) if outs else np.zeros(0, dtype=np.float32)
+            sf.write(args.out, out, out_sr)
+
+            if bool(args.drop_warmup_hops):
+                delay_samples = int(int(warmup_hops) * int(hop_out) + int(extra_delay_samples))
+            else:
+                delay_samples = int(extra_delay_samples)
         else:
-            delay_samples = int(emit_start_out)
+            raise ValueError(f"Unknown stream_backend: {stream_backend}")
 
     if args.meta_json:
         meta_p = Path(args.meta_json)
@@ -577,6 +775,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 fade_ms=int(args.fade_ms),
                 normalize_align=str(args.normalize_align),
                 emit_align=str(args.emit_align),
+                stream_backend=str(args.stream_backend),
                 drop_warmup_hops=bool(args.drop_warmup_hops),
                 vad_mode=str(args.vad_mode),
                 vad_db=float(args.vad_db),
@@ -615,6 +814,36 @@ def main(argv: Optional[list[str]] = None) -> int:
             if len(timings) >= 2
             else (float(timings[0]) if timings else 0.0),
             "windows": int(len(timings)),
+            "algo_delay_mid_ms": (
+                float(
+                    _algo_delay_mid_ms(
+                        int(args.window_ms),
+                        int(args.hop_ms),
+                        str(args.emit_align),
+                    )
+                )
+                if bool(args.stream) and str(args.stream_backend) == "windowed"
+                else (
+                    float(
+                        1000.0
+                        * (
+                            float(
+                                int(vc_cfg.get("cross_fade_samples", 0) or 0)
+                                + int(round(0.05 * float(out_sr)))
+                            )
+                            / float(out_sr)
+                        )
+                        + 0.5
+                        * (
+                            1000.0
+                            * float(int(round(float(args.hop_ms) / 1000.0 * float(out_sr))))
+                            / float(out_sr)
+                        )
+                    )
+                    if bool(args.stream) and str(args.stream_backend) == "mmcxli_infer" and int(args.hop_ms) > 0
+                    else float("nan")
+                )
+            ),
         }
         meta_p.write_text(json.dumps({"config": asdict(cfg), "stats": stats}, indent=2))
 

@@ -610,7 +610,11 @@ def _score_one(
     rtf_mean = float(speed_mean_window_sec / hop_sec) if hop_sec > 0 else float("nan")
     rtf_p95 = float(speed_p95_window_sec / hop_sec) if hop_sec > 0 else float("nan")
 
-    algo_delay_mid_ms = _algo_delay_mid_ms(window_ms, hop_ms, emit_align)
+    algo_delay_mid_ms = float(
+        meta.get("stats", {}).get("algo_delay_mid_ms", float("nan")) or float("nan")
+    )
+    if not np.isfinite(algo_delay_mid_ms):
+        algo_delay_mid_ms = _algo_delay_mid_ms(window_ms, hop_ms, emit_align)
     latency_p95_ms = (
         float(algo_delay_mid_ms + 1000.0 * speed_p95_window_sec)
         if np.isfinite(algo_delay_mid_ms)

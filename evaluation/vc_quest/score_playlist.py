@@ -767,9 +767,13 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         stream_window_ms = int(stream_cfg.get("window_ms") or 0)
         stream_emit_align = str(stream_cfg.get("emit_align") or "")
-        algo_delay_mid_ms = _algo_delay_mid_ms(
-            stream_window_ms, hop_ms, stream_emit_align
+        algo_delay_mid_ms = float(
+            meta.get("stats", {}).get("algo_delay_mid_ms", float("nan")) or float("nan")
         )
+        if not np.isfinite(algo_delay_mid_ms):
+            algo_delay_mid_ms = _algo_delay_mid_ms(
+                stream_window_ms, hop_ms, stream_emit_align
+            )
         latency_p95_ms = (
             float(algo_delay_mid_ms + 1000.0 * speed_p95_window_sec)
             if np.isfinite(algo_delay_mid_ms)

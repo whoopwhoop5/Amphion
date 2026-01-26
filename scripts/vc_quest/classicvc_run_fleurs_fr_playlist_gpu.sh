@@ -41,6 +41,7 @@ REF_MAX_SEC="${REF_MAX_SEC:-10.0}"
 STREAM_WINDOW_MS="${STREAM_WINDOW_MS:-800}"
 STREAM_HOP_MS="${STREAM_HOP_MS:-400}"
 STREAM_FADE_MS="${STREAM_FADE_MS:-10}"
+STREAM_BACKEND="${STREAM_BACKEND:-windowed}"
 
 EMIT_ALIGN="${EMIT_ALIGN:-end}"
 STREAM="${STREAM:-1}"
@@ -96,6 +97,7 @@ if [[ "${STREAM}" == "1" ]]; then
   STREAM_ARGS+=(--stream)
   STREAM_ARGS+=(--window_ms "${STREAM_WINDOW_MS}")
   STREAM_ARGS+=(--hop_ms "${STREAM_HOP_MS}")
+  STREAM_ARGS+=(--stream_backend "${STREAM_BACKEND}")
   STREAM_ARGS+=(--fade_ms "${STREAM_FADE_MS}")
   STREAM_ARGS+=(--emit_align "${EMIT_ALIGN}")
   STREAM_ARGS+=(--vad_mode "${VAD_MODE}")
