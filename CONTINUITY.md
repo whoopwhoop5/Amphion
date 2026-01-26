@@ -169,6 +169,9 @@
 - VC quest (2026-01-26):
   - ClassicVC/MMCXLI: added `stream_backend=mmcxli_infer` using MMCXLI’s stateful realtime `AudioEfx.inference()` (vs our prior windowed `convert_offline()` streaming sim), plus per-utterance state reset for playlist eval.
   - Meta now records `algo_delay_mid_ms`; vc_quest scorers prefer it when present for accurate latency scoring. Runner script accepts `STREAM_BACKEND`; added A/B preset: `scripts/vc_quest/presets/classicvc_fleurs_fr_quality_ab.sh`.
+- VC quest (2026-01-26):
+  - Fixed ClassicVC `mmcxli_infer` scoring alignment: `delay_samples` is now `warmup_hops*hop_out - extra_delay` when `drop_warmup_hops=true` (prevents catastrophic mis-scoring).
+  - Local smoke A/B (MAX_PAIRS=20, WER_MODE=audio_ref, w1600/h400/end): `mmcxli_infer` is faster (rtf_p95≈1.21 vs 1.62; latency_p95_ms≈747 vs 848) but lower quality vs `windowed` (WER≈0.889 vs 0.840; S-SIM(target)≈0.879 vs 0.916; ear_score_v2≈0.174 vs 0.271).
 - VC quest (2026-01-14):
   - Wrapper A/B (offline vs streaming) on Vast (FLEURS fr_fr dev 300 pairs, WER_MODE=audio_ref):
     - ClassicVC: offline WER≈0.345/ear≈0.602 vs streaming WER≈0.68; delta boundary smoothing improved streaming ear≈0.33→0.47 at the same latency (~228ms).
