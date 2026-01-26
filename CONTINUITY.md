@@ -172,6 +172,9 @@
 - VC quest (2026-01-26):
   - Fixed ClassicVC `mmcxli_infer` scoring alignment: `delay_samples` is now `warmup_hops*hop_out - extra_delay` when `drop_warmup_hops=true` (prevents catastrophic mis-scoring).
   - Local smoke A/B (MAX_PAIRS=20, WER_MODE=audio_ref, w1600/h400/end): `mmcxli_infer` is faster (rtf_p95≈1.21 vs 1.62; latency_p95_ms≈747 vs 848) but lower quality vs `windowed` (WER≈0.889 vs 0.840; S-SIM(target)≈0.879 vs 0.916; ear_score_v2≈0.174 vs 0.271).
+  - More ClassicVC harness smoke (MAX_PAIRS=20, WER_MODE=audio_ref, CPU):
+    - w800/h400/end: `windowed` hits realtime (rtf_p95≈0.87, latency_p95_ms≈548) with higher S-SIM(target) and quieter silence; `mmcxli_infer` has better WER and lower hop-flux, but worse silence leakage and higher latency (rtf_p95≈0.99, latency_p95_ms≈660).
+    - w600/h140/end: both not realtime on CPU (rtf_p95>1.8); `mmcxli_infer` did not outperform `windowed` overall.
 - VC quest (2026-01-14):
   - Wrapper A/B (offline vs streaming) on Vast (FLEURS fr_fr dev 300 pairs, WER_MODE=audio_ref):
     - ClassicVC: offline WER≈0.345/ear≈0.602 vs streaming WER≈0.68; delta boundary smoothing improved streaming ear≈0.33→0.47 at the same latency (~228ms).
