@@ -186,15 +186,20 @@
     - Vast A/B: ClassicVC delta smoothing trivially zeros jump-ratio, but flux-ratio stays meaningful and shows improvement; Chatterbox remains very smooth at hop boundaries.
 - VC quest (2026-01-17):
   - Evaluated StreamVoiceAnon (Plachtaa) on FLEURS fr_fr playlist (300 pairs, compile enabled): very fast (latency_p95_ms≈132, rtf_p95≈0.36) but fails dropout gates badly (dropout>0.01: 286/300) => call_score_v1≈0.004, ear_score_v2≈0.002; likely reject.
-- Now: VC quest: ClassicVC/MMCXLI remains the best call-latency candidate on FLEURS fr_fr; best validated streaming wrapper is w1600/h400 end + delta smoothing (ear_score_v2≈0.467, call_score_v1≈0.370, latency_p95_ms≈228). FreeVC remains lower intelligibility + frequent dropouts; Chatterbox remains the quality/stability reference but is ~0.8s latency at realtime config (`call_score_v1=0` under strict threshold). GPT-SoVITS, MNP-SVC, FasterSVC, and StreamVoiceAnon rejected for French call-VC.
+- VC quest (2026-01-27):
+  - ClassicVC/MMCXLI: added reference conditioning controls (`--ref_vad_mode=rms` voiced-only trim + multi-ref averaging) and exposed `mmcxli_infer` silence skipping knobs (`--mmcxli_silence_mode`, `--mmcxli_silence_skip_ms`).
+  - Windows RTX 5090 full A/B (FLEURS fr_fr dev, 300 pairs, WER_MODE=audio_ref, emit_align=end, content_expand_rate=0.1):
+    - Windowed streaming sim `w2000/h400` + ref_vad=rms: WER≈0.610, ear_score_v2≈0.551, S-SIM(target)≈0.920, latency_p95_ms≈264, rtf_p95≈0.160, call_score_v1≈0.374.
+    - Native MMCXLI realtime path (`stream_backend=mmcxli_infer`) at same window/hop: WER≈0.834, ear_score_v2≈0.290, S-SIM(target)≈0.890, latency_p95_ms≈329, rtf_p95≈0.160.
+    - Conclusion: `mmcxli_infer` is not better than `windowed` at the same window/hop (quality + latency both worse).
+- Now: VC quest: ClassicVC/MMCXLI remains the best call-latency candidate on FLEURS fr_fr; best quality+call tradeoff on RTX 5090 is `windowed` `w2000/h400 end` with `ref_vad_mode=rms` (WER≈0.610, ear≈0.551, latency_p95≈264ms, call_score_v1≈0.374). FreeVC remains lower intelligibility + frequent dropouts; Chatterbox remains the quality/stability reference but is ~0.8s latency at realtime config (`call_score_v1=0` under strict threshold). GPT-SoVITS, MNP-SVC, FasterSVC, and StreamVoiceAnon rejected for French call-VC.
 - Next:
   - Continue scanning for new zero-shot call-VC competitors (e.g., Noro; see `docs/vc_quest.md` backlog).
   - Decide whether to adopt FreeVC gain/mask and rerun a full 300-pair evaluation for the best settings.
-  - Run full FLEURS fr_fr ClassicVC A/B (windowed vs `mmcxli_infer`) to confirm whether native MMCXLI streaming improves WER/flux/dropouts at the same hop/latency.
   - Add “worst cases” surfacing (case IDs/paths) for dropouts/glitches to speed subjective spot-checking.
   - (Optional) Calibrate `ear_score_v3` flux thresholds and/or tune ClassicVC fade/smoothing to reduce `glitch_boundary_flux_ratio_*` without harming WER.
   - Revisit Chatterbox call-latency only if we can reduce algorithmic delay or inference time without WER collapse; otherwise treat as hard-limited for call UX.
 - Open questions (UNCONFIRMED if needed):
   - Best “paper-aligned” emotion embedding extraction for E-SIM (StyleStream cites `ddlBoJack/emotion2vec`; ModelScope pipeline returns nearly-collinear feats).
-  - Whether to add optional VAD/gating to skip inference on silence (quality + compute).
+  - Whether to tune `ref_vad_db` / hangover defaults for ClassicVC (current preset uses `ref_vad_mode=rms`, `ref_vad_db=-55`, `ref_vad_hangover_ms=200`).
 - Working set (files/ids/commands): `evaluation/vc_quest/*`, `scripts/vc_quest/*`, `scripts/vc_quest/presets/*`, `runs/vc_quest/*`, `docs/vc_quest.md`, `bd list`, `ssh vastai-gpu-1`

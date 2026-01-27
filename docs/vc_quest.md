@@ -55,6 +55,10 @@ python -m models.vc.classicvc.live_local \
   --emit_align end
 ```
 
+Tips:
+- You can pass multiple `--ref` flags (2–4 clips) to average embeddings.
+- Add `--ref_vad_mode rms` to VAD-trim silence from the reference before style embedding.
+
 ### Live local (macOS): FreeVC / ChatterboxVC / Seed-VC (experimental)
 These are **GPU-heavy** compared to ClassicVC/MMCXLI. On Apple Silicon they are usually **not real-time**, but the mic→speaker CLIs are useful for quick A/B listening:
 
@@ -140,9 +144,10 @@ These are *device* benchmarks (not full leaderboard runs). They help answer “c
 - Settings: WER_MODE=`audio_ref`, Whisper `base`, language=`fr`. Smoke sizes were `MAX_PAIRS=20–26`.
 
 Results:
-- **ClassicVC/MMCXLI (quality preset)** (`classicvc_fleurs_fr_quality.sh`, w1600/h400 end):
+- **ClassicVC/MMCXLI (quality-ish config)** (older `w1600/h400 end`; current preset uses `w2000/h400 end`):
   - Mac smoke (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_mac_quality_w1600_h400_end_smoke50/summary.json`): rtf_p95 mean≈1.73, latency_p95_ms mean≈894
   - RTX 4090 full: rtf_p95 mean≈0.073, latency_p95_ms mean≈229 ⇒ Mac is ~+2276% slower on rtf_p95 and ~+290% higher latency.
+  - Windows RTX 5090 full (`w2000/h400 end`, `ref_vad_mode=rms`): `runs/vc_quest/playlists/fleurs_fr_fr/classicvc_5090_w2000_h400_end_windowed_refvad_c0p1_full/summary.json` ⇒ rtf_p95 mean≈0.160, latency_p95_ms mean≈264
 - **ClassicVC/MMCXLI (call-latency preset)** (`classicvc_fleurs_fr_call_latency.sh`, w800/h400 end):
   - Mac smoke (`runs/vc_quest/playlists/fleurs_fr_fr/classicvc_mac_call_w800_h400_end_smoke20/summary.json`): rtf_p95 mean≈0.82, latency_p95_ms mean≈529 (borderline); quality drops (WER mean≈0.94).
 - **ChatterboxVC (quality preset)** (`chatterbox_fleurs_fr_quality.sh`, w800/h400 center, timesteps=8):
@@ -625,6 +630,15 @@ Not actionable yet (paper/demo only or no public checkpoints):
   - WER mean≈0.748, S-SIM(target) mean≈0.903
   - Gates: dropouts (`dropout>0.01`): 3/300, silence/clip gates 0/300
   - Note: `w800/h400` is slightly worse on metrics but has lower startup buffer (0.8s vs 1.2s).
+
+- Results (Windows RTX 5090, FLEURS fr_fr, 300 pairs, WER_MODE=`audio_ref`, `emit_align=end`, `content_expand_rate=0.1`):
+  - **Windowed streaming sim** (`w2000/h400`, `ref_vad_mode=rms`): `runs/vc_quest/playlists/fleurs_fr_fr/classicvc_5090_w2000_h400_end_windowed_refvad_c0p1_full/summary.json`
+    - ear_score_v2 mean≈0.551, WER mean≈0.610, S-SIM(target) mean≈0.920
+    - latency_p95_ms mean≈264, rtf_p95 mean≈0.160
+  - **MMCXLI native realtime path** (`stream_backend=mmcxli_infer`, same window/hop): `runs/vc_quest/playlists/fleurs_fr_fr/classicvc_5090_w2000_h400_end_mmcxli_infer_refvad_c0p1_full/summary.json`
+    - ear_score_v2 mean≈0.290, WER mean≈0.834, S-SIM(target) mean≈0.890
+    - latency_p95_ms mean≈329, rtf_p95 mean≈0.160
+  - Conclusion: `mmcxli_infer` is **not** better than our windowed harness at the same window/hop on this benchmark (quality + latency both worse). Use `stream_backend=windowed`.
 
 - Conclusion: currently our best “call-latency + intelligibility” pipeline on the French playlist. Speaker similarity is lower than FreeVC/Chatterbox, but content is stronger than FreeVC and latency is far better than Chatterbox.
 
