@@ -18,10 +18,11 @@ import soundfile as sf
 from evaluation.vc_quest.classicvc_convert import (
     _DummySoundControl,
     _algo_delay_mid_ms,
-    _compute_style_embedding,
+    _compute_style_embedding_multi,
     _import_mmcxli_audio_efx,
     _load_mono,
     _resample_if_needed,
+    _reset_mmcxli_realtime_state,
     _resolve_weight,
     _trim_wav,
 )
@@ -40,45 +41,6 @@ from evaluation.vc_quest.streaming_utils import (
 
 def _case_id(source_id: str, target_id: str) -> str:
     return f"{source_id}__to__{target_id}"
-
-
-def _reset_mmcxli_realtime_state(audio_efx) -> None:
-    """Reset MMCXLI AudioEfx streaming buffers between utterances.
-
-    MMCXLI's realtime `AudioEfx.inference()` is stateful; for playlist evaluation we
-    need each utterance to start from a clean state without reloading ONNX sessions.
-    """
-
-    for name, fill in (
-        ("buf_wav_i", 0.0),
-        ("buf_wav_i16", 0.0),
-        ("buf_wav_o", 0.0),
-        ("buf_spec_p", -50.0),
-        ("buf_spec_o", -50.0),
-        ("buf_emb", 0.0),
-        ("buf_f0_real", 440.0),
-        ("buf_energy_real", 0.0),
-        ("buf_activation", 0.0),
-        ("buf_f0_pred", 440.0),
-        ("buf_energy_pred", 0.0),
-    ):
-        buf = getattr(audio_efx, name, None)
-        if isinstance(buf, np.ndarray):
-            buf.fill(float(fill))
-
-    if hasattr(audio_efx, "buf_f0_real") and hasattr(audio_efx, "buf_f0_pred"):
-        audio_efx.buf_f0_all = np.concatenate(  # type: ignore[attr-defined]
-            (audio_efx.buf_f0_real, audio_efx.buf_f0_pred), axis=0
-        )
-
-    if hasattr(audio_efx, "proc_head"):
-        audio_efx.proc_head = 0
-    if hasattr(audio_efx, "total_end_time"):
-        audio_efx.total_end_time = time.perf_counter_ns()
-
-    for name in ("pre_lap", "vc_lap", "post_lap"):
-        if hasattr(audio_efx, name):
-            setattr(audio_efx, name, 0.0)
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -113,6 +75,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         default=10.0,
         help="Trim reference audio to this many seconds (0 disables).",
     )
+    parser.add_argument(
+        "--ref_vad_mode",
+        type=str,
+        default="off",
+        choices=["off", "rms"],
+        help="Optional voiced-only trimming of reference audio before style embedding.",
+    )
+    parser.add_argument("--ref_vad_db", type=float, default=-55.0)
+    parser.add_argument("--ref_vad_frame_ms", type=float, default=10.0)
+    parser.add_argument("--ref_vad_hangover_ms", type=float, default=200.0)
     parser.add_argument(
         "--absolute_pitch",
         action=argparse.BooleanOptionalAction,
@@ -177,6 +149,25 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--vad_webrtc_aggressiveness", type=int, default=2)
     parser.add_argument("--vad_webrtc_frame_ms", type=int, default=30, choices=[10, 20, 30])
     parser.add_argument("--vad_webrtc_min_voiced_ratio", type=float, default=0.1)
+    parser.add_argument(
+        "--mmcxli_silence_mode",
+        type=str,
+        default="infer",
+        choices=["infer", "skip"],
+        help="For stream_backend=mmcxli_infer: skip model inference on sustained silence.",
+    )
+    parser.add_argument(
+        "--mmcxli_silence_skip_ms",
+        type=float,
+        default=200.0,
+        help="Consecutive silence duration required before skipping inference (ms).",
+    )
+    parser.add_argument(
+        "--mmcxli_reset_on_silence",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="When skipping inference, reset MMCXLI streaming buffers at skip entry.",
+    )
 
     parser.add_argument(
         "--gain_mode",
@@ -300,7 +291,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         ref_wav, ref_sr = _load_mono(t.wav_path)
         ref_wav = _trim_wav(ref_wav, ref_sr, float(args.ref_max_sec))
         ref_16k = _resample_if_needed(ref_wav, ref_sr, in_sr)
-        style = _compute_style_embedding(audio_efx, ref_16k)
+        style = _compute_style_embedding_multi(
+            audio_efx,
+            [ref_16k],
+            ref_vad_mode=str(args.ref_vad_mode),
+            ref_vad_db=float(args.ref_vad_db),
+            ref_vad_frame_ms=float(args.ref_vad_frame_ms),
+            ref_vad_hangover_ms=float(args.ref_vad_hangover_ms),
+        )
         sc.current_target_style = np.asarray(style, dtype=np.float32).reshape(1, -1)
 
         for pair_idx, source_id in items:
@@ -318,6 +316,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             timings: list[float] = []
             delay_samples = 0
             warmup_hops = 0
+            skipped_vc_hops = 0
 
             if not bool(args.stream):
                 t0 = time.time()
@@ -429,6 +428,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                             hangover_left = hangover_hops
 
                         if not voiced:
+                            skipped_vc_hops += 1
                             out_hop = np.zeros(hop_out, dtype=np.float32)
                         else:
                             t0 = time.time()
@@ -516,6 +516,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                     hop_ms_eff = 1000.0 * float(hop_out) / float(out_sr)
                     hangover_hops = int(np.ceil(float(args.vad_hangover_ms) / max(hop_ms_eff, 1e-6)))
                     hangover_left = 0
+                    silent_run = 0
+                    skipping = False
+                    skip_after_hops = int(
+                        max(1.0, np.ceil(float(args.mmcxli_silence_skip_ms) / max(hop_ms_eff, 1e-6)))
+                    )
+                    silence_mode = str(args.mmcxli_silence_mode)
 
                     for hop_idx, start_out in enumerate(range(0, len(src_out), hop_out)):
                         block = src_out[start_out : start_out + hop_out]
@@ -527,18 +533,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                         if len(vad_segment) < hop_in:
                             vad_segment = np.pad(vad_segment, (0, hop_in - len(vad_segment)), mode="constant")
 
-                        t0 = time.time()
-                        out_block = audio_efx.inference(block.reshape(-1, 1))
-                        timings.append(time.time() - t0)
-                        out_block = np.asarray(out_block, dtype=np.float32)
-                        out_hop = (
-                            out_block[:, 0].reshape(-1)
-                            if out_block.ndim == 2
-                            else out_block.reshape(-1)
-                        )
-                        out_hop = normalize_length(out_hop, hop_out, align="end")
-
                         if hop_idx < warmup_target:
+                            t0 = time.time()
+                            _ = audio_efx.inference(block.reshape(-1, 1))
+                            timings.append(time.time() - t0)
                             warmup_hops += 1
                             prev_last = 0.0
                             if not drop_warmup_hops:
@@ -578,8 +576,34 @@ def main(argv: Optional[list[str]] = None) -> int:
                         elif voiced:
                             hangover_left = hangover_hops
 
-                        if not voiced:
+                        if silence_mode == "skip" and (not bool(voiced)) and bool(silent_rms) and vad_mode != "off":
+                            silent_run += 1
+                        else:
+                            silent_run = 0
+
+                        skip_infer = (
+                            silence_mode == "skip" and silent_run >= skip_after_hops and vad_mode != "off"
+                        )
+                        if skip_infer:
+                            skipped_vc_hops += 1
+                            if bool(args.mmcxli_reset_on_silence) and not skipping:
+                                _reset_mmcxli_realtime_state(audio_efx)
+                            skipping = True
                             out_hop = np.zeros(hop_out, dtype=np.float32)
+                        else:
+                            skipping = False
+                            t0 = time.time()
+                            out_block = audio_efx.inference(block.reshape(-1, 1))
+                            timings.append(time.time() - t0)
+                            out_block = np.asarray(out_block, dtype=np.float32)
+                            out_hop = (
+                                out_block[:, 0].reshape(-1)
+                                if out_block.ndim == 2
+                                else out_block.reshape(-1)
+                            )
+                            out_hop = normalize_length(out_hop, hop_out, align="end")
+                            if not voiced:
+                                out_hop = np.zeros(hop_out, dtype=np.float32)
 
                         gain_mode = str(args.gain_mode)
                         if voiced and gain_mode == "match_src_rms":
@@ -646,6 +670,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                     "vad_webrtc_aggressiveness": int(args.vad_webrtc_aggressiveness),
                     "vad_webrtc_frame_ms": int(args.vad_webrtc_frame_ms),
                     "vad_webrtc_min_voiced_ratio": float(args.vad_webrtc_min_voiced_ratio),
+                    "mmcxli_silence_mode": str(args.mmcxli_silence_mode),
+                    "mmcxli_silence_skip_ms": float(args.mmcxli_silence_skip_ms),
+                    "mmcxli_reset_on_silence": bool(args.mmcxli_reset_on_silence),
+                    "ref_vad_mode": str(args.ref_vad_mode),
+                    "ref_vad_db": float(args.ref_vad_db),
+                    "ref_vad_frame_ms": float(args.ref_vad_frame_ms),
+                    "ref_vad_hangover_ms": float(args.ref_vad_hangover_ms),
                     "gain_mode": str(args.gain_mode),
                     "gain_target_delta_db": float(args.gain_target_delta_db),
                     "gain_max_boost_db": float(args.gain_max_boost_db),
@@ -668,6 +699,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 if len(timings) >= 2
                 else (float(timings[0]) if timings else 0.0),
                 "windows": int(len(timings)),
+                "skipped_vc_hops": int(skipped_vc_hops) if bool(args.stream) else 0,
                 "algo_delay_mid_ms": (
                     float(
                         _algo_delay_mid_ms(

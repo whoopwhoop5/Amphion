@@ -335,8 +335,24 @@ def _build_audio_efx(
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="ClassicVC/MMCXLI live VC (single-process, local inference).")
     parser.add_argument("--mmcxli_dir", type=str, default="~/deps/mmcxli")
-    parser.add_argument("--ref", type=str, default=None, help="Reference wav path (required unless --passthrough).")
+    parser.add_argument(
+        "--ref",
+        type=str,
+        action="append",
+        default=None,
+        help="Reference wav path (repeatable; averaged) (required unless --passthrough).",
+    )
     parser.add_argument("--ref_max_sec", type=float, default=10.0)
+    parser.add_argument(
+        "--ref_vad_mode",
+        type=str,
+        default="off",
+        choices=["off", "rms"],
+        help="Optional voiced-only trimming of reference audio before style embedding.",
+    )
+    parser.add_argument("--ref_vad_db", type=float, default=-55.0)
+    parser.add_argument("--ref_vad_frame_ms", type=float, default=10.0)
+    parser.add_argument("--ref_vad_hangover_ms", type=float, default=200.0)
     parser.add_argument("--model_device", type=str, default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--absolute_pitch", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--estimate_energy", action=argparse.BooleanOptionalAction, default=False)
@@ -410,12 +426,24 @@ def main(argv: Optional[list[str]] = None) -> int:
             content_expand_rate=float(args.content_expand_rate),
         )
 
-        from evaluation.vc_quest.classicvc_convert import _compute_style_embedding  # local import
+        from evaluation.vc_quest.classicvc_convert import (  # local import
+            _compute_style_embedding_multi,
+        )
 
-        ref_wav, ref_sr = _load_wav_mono(str(args.ref))
-        ref_wav = _trim_wav(ref_wav, ref_sr, float(args.ref_max_sec))
-        ref_16k = _resample(ref_wav, ref_sr, in_sr)
-        style = _compute_style_embedding(audio_efx, ref_16k)
+        ref_wavs_16k: list[np.ndarray] = []
+        for ref_path in args.ref:
+            ref_wav, ref_sr = _load_wav_mono(str(ref_path))
+            ref_wav = _trim_wav(ref_wav, ref_sr, float(args.ref_max_sec))
+            ref_wavs_16k.append(_resample(ref_wav, ref_sr, in_sr))
+
+        style = _compute_style_embedding_multi(
+            audio_efx,
+            ref_wavs_16k,
+            ref_vad_mode=str(args.ref_vad_mode),
+            ref_vad_db=float(args.ref_vad_db),
+            ref_vad_frame_ms=float(args.ref_vad_frame_ms),
+            ref_vad_hangover_ms=float(args.ref_vad_hangover_ms),
+        )
         sc.current_target_style = np.asarray(style, dtype=np.float32).reshape(1, -1)
     else:
         audio_efx = None

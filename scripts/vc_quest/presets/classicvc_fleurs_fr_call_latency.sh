@@ -21,10 +21,11 @@ export VAD_DB="-55"
 export VAD_FRAME_MS="10"
 export VAD_HANGOVER_MS="200"
 
+export REF_VAD_MODE="${REF_VAD_MODE:-rms}"
+
 export GAIN_MODE="off"
 export MASK_MODE="off"
 
 export WER_MODE="${WER_MODE:-audio_ref}"
 
 bash scripts/vc_quest/classicvc_run_fleurs_fr_playlist_gpu.sh
-

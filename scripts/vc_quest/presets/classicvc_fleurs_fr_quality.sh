@@ -9,8 +9,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../../.."
 
-export RUN_NAME="${RUN_NAME:-classicvc_preset_quality_w1600_h400_end}"
-export STREAM_WINDOW_MS="1600"
+export RUN_NAME="${RUN_NAME:-classicvc_preset_quality_w2000_h400_end}"
+export STREAM_WINDOW_MS="2000"
 export STREAM_HOP_MS="400"
 export STREAM_FADE_MS="10"
 export EMIT_ALIGN="end"
@@ -20,6 +20,8 @@ export VAD_MODE="rms"
 export VAD_DB="-55"
 export VAD_FRAME_MS="10"
 export VAD_HANGOVER_MS="200"
+
+export REF_VAD_MODE="${REF_VAD_MODE:-rms}"
 
 export GAIN_MODE="off"
 export MASK_MODE="off"

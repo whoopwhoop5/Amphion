@@ -37,6 +37,10 @@ if [[ -z "${MODEL_DEVICE:-}" ]]; then
 fi
 SEED="${SEED:-0}"
 REF_MAX_SEC="${REF_MAX_SEC:-10.0}"
+REF_VAD_MODE="${REF_VAD_MODE:-off}"
+REF_VAD_DB="${REF_VAD_DB:--55}"
+REF_VAD_FRAME_MS="${REF_VAD_FRAME_MS:-10}"
+REF_VAD_HANGOVER_MS="${REF_VAD_HANGOVER_MS:-200}"
 
 STREAM_WINDOW_MS="${STREAM_WINDOW_MS:-800}"
 STREAM_HOP_MS="${STREAM_HOP_MS:-400}"
@@ -58,6 +62,10 @@ VAD_HANGOVER_MS="${VAD_HANGOVER_MS:-200}"
 VAD_WEBRTC_AGGRESSIVENESS="${VAD_WEBRTC_AGGRESSIVENESS:-2}"
 VAD_WEBRTC_FRAME_MS="${VAD_WEBRTC_FRAME_MS:-30}"
 VAD_WEBRTC_MIN_VOICED_RATIO="${VAD_WEBRTC_MIN_VOICED_RATIO:-0.1}"
+
+MMCXLI_SILENCE_MODE="${MMCXLI_SILENCE_MODE:-infer}"
+MMCXLI_SILENCE_SKIP_MS="${MMCXLI_SILENCE_SKIP_MS:-200.0}"
+MMCXLI_RESET_ON_SILENCE="${MMCXLI_RESET_ON_SILENCE:-1}"
 
 GAIN_MODE="${GAIN_MODE:-off}"
 GAIN_TARGET_DELTA_DB="${GAIN_TARGET_DELTA_DB:-10.0}"
@@ -91,6 +99,10 @@ if [[ "${ESTIMATE_ENERGY}" == "1" ]]; then
 fi
 EXTRA_ARGS+=(--pitch_shift "${PITCH_SHIFT}")
 EXTRA_ARGS+=(--content_expand_rate "${CONTENT_EXPAND_RATE}")
+EXTRA_ARGS+=(--ref_vad_mode "${REF_VAD_MODE}")
+EXTRA_ARGS+=(--ref_vad_db "${REF_VAD_DB}")
+EXTRA_ARGS+=(--ref_vad_frame_ms "${REF_VAD_FRAME_MS}")
+EXTRA_ARGS+=(--ref_vad_hangover_ms "${REF_VAD_HANGOVER_MS}")
 
 STREAM_ARGS=()
 if [[ "${STREAM}" == "1" ]]; then
@@ -107,6 +119,11 @@ if [[ "${STREAM}" == "1" ]]; then
   STREAM_ARGS+=(--vad_webrtc_aggressiveness "${VAD_WEBRTC_AGGRESSIVENESS}")
   STREAM_ARGS+=(--vad_webrtc_frame_ms "${VAD_WEBRTC_FRAME_MS}")
   STREAM_ARGS+=(--vad_webrtc_min_voiced_ratio "${VAD_WEBRTC_MIN_VOICED_RATIO}")
+  STREAM_ARGS+=(--mmcxli_silence_mode "${MMCXLI_SILENCE_MODE}")
+  STREAM_ARGS+=(--mmcxli_silence_skip_ms "${MMCXLI_SILENCE_SKIP_MS}")
+  if [[ "${MMCXLI_RESET_ON_SILENCE}" == "0" ]]; then
+    STREAM_ARGS+=(--no-mmcxli_reset_on_silence)
+  fi
   STREAM_ARGS+=(--gain_mode "${GAIN_MODE}")
   STREAM_ARGS+=(--gain_target_delta_db "${GAIN_TARGET_DELTA_DB}")
   STREAM_ARGS+=(--gain_max_boost_db "${GAIN_MAX_BOOST_DB}")
